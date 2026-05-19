@@ -15,6 +15,4 @@ Este proyecto se desea implementar con Python y MySQL.
   - `Inserts.sql`: Script para la insercion de datos de prueba.
   - `README.md`: Este archivo.
   - `requirements.txt`: (Opcional) Listado de dependencias de Python.
-  - `src/`: (Opcional) Codigo fuente de la aplicacion.
-  - `src/database/`: (Opcional) Codigo fuente de la aplicacion.
   - `src/gui/`: (Opcional) Codigo fuente de la aplicacion.
