@@ -1,4 +1,13 @@
+import sys
+import os
 import customtkinter as ctk
+
+
+# Agregamos la ruta del directorio padre (src) para poder importar el módulo de base de datos
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Importamos la función de validación de base de datos que creamos
+from database.connection import validar_credenciales
 
 # Configuración básica de aspecto
 ctk.set_appearance_mode("dark")  # Modo oscuro
@@ -109,13 +118,25 @@ class LoginWindow(ctk.CTk):
             self.error_label.configure(text="Por favor, complete todos los campos.", text_color="#ff4d4d")
             return
 
-        # SIMULACIÓN (Acá luego conectaremos a MySQL para validar el empleado)
-        # Se usará la contraseña (documento) ingresada como contraseña y el usuario como correo/documento.
-        if usuario == "admin" and password == "12345":
-            self.error_label.configure(text="Login exitoso! (Simulado)", text_color="#1DB954")
-            # TODO: Cerrar login_window y abrir menu_principal
-        else:
-            self.error_label.configure(text="Credenciales incorrectas.", text_color="#ff4d4d")
+        try:
+            # Intentar validar con la base de datos
+            # Recordar: El usuario es correo o documento, y la contraseña es el documento
+            empleado = validar_credenciales(usuario, password)
+            
+            if empleado:
+                # Login exitoso: Mostramos mensaje de bienvenida y el nombre del empleado
+                nombre_empleado = empleado['nombre']
+                self.error_label.configure(text=f"¡Bienvenido, {nombre_empleado}!", text_color="#1DB954")
+                # TODO: Cerrar login_window y abrir menu_principal
+            else:
+                # Si retorna None, es porque el correo/documento o el documento (contraseña) no coinciden
+                self.error_label.configure(text="Credenciales incorrectas.", text_color="#ff4d4d")
+                
+        except Exception as e:
+            # Si el servidor de base de datos está caído o hay otro error,
+            # lo capturamos para evitar que el programa se cierre inesperadamente y se lo mostramos al usuario
+            self.error_label.configure(text=str(e), text_color="#ff4d4d")
+
 
 if __name__ == "__main__":
     app = LoginWindow()
