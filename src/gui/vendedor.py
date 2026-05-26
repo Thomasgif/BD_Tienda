@@ -82,6 +82,13 @@ class VendedorWindow(ctk.CTkToplevel):
         )
         self.logout_button.grid(row=8, column=0, padx=20, pady=(10, 30), sticky="ew")
 
+        # Cargar clientes iniciales
+        try:
+            self.todos_clientes = obtener_clientes()
+        except Exception as e:
+            self.todos_clientes = []
+            print(f"Error al cargar clientes: {e}")
+
         # --- Frames de Contenido (Main Frames) ---
         self.frames = {}
         
@@ -302,6 +309,11 @@ class VendedorWindow(ctk.CTkToplevel):
         )
         btn_registrar.pack(fill="x", padx=20, pady=(0, 20))
 
+        # Inicializar comboboxes con datos reales
+        self.actualizar_combobox_clientes()
+        self.actualizar_combobox_productos()
+        self.actualizar_combobox_pagos()
+
     def setup_cuentas_tab(self, parent):
         # Título de la tabla/lista
         lbl_lista = ctk.CTkLabel(parent, text="Estado de Cuentas (Solo Lectura)", font=("Arial", 18, "bold"), text_color="#aaaaaa")
@@ -451,8 +463,49 @@ class VendedorWindow(ctk.CTkToplevel):
         self.nuevo_cliente_win = NuevoClienteWindow(self)
 
     def editar_cliente(self, documento):
-        # Esta función está en blanco temporalmente para implementar luego
-        pass
+        cliente = next((c for c in self.todos_clientes if c['documento'] == documento), None)
+        if cliente:
+            from gui.nuevo_cliente import NuevoClienteWindow
+            self.nuevo_cliente_win = NuevoClienteWindow(self, cliente_datos=cliente)
+
+    def actualizar_lista_clientes(self):
+        try:
+            self.todos_clientes = obtener_clientes()
+            self.render_clientes(self.todos_clientes)
+            self.actualizar_combobox_clientes()
+        except Exception as e:
+            print(f"Error al actualizar la lista de clientes: {e}")
+
+    def actualizar_combobox_clientes(self):
+        if not hasattr(self, 'combo_cliente'):
+            return
+        valores = ["Seleccione cliente..."]
+        for c in self.todos_clientes:
+            valores.append(f"{c['nombre']} {c['apellidos']} ({c['documento']})")
+        self.combo_cliente.configure(values=valores)
+        self.combo_cliente.set("Seleccione cliente...")
+
+    def actualizar_combobox_productos(self):
+        if not hasattr(self, 'combo_producto') or not hasattr(self, 'todos_productos'):
+            return
+        valores = ["Seleccione producto..."]
+        for p in self.todos_productos:
+            valores.append(f"{p['nombre']} ({p['referencia']})")
+        self.combo_producto.configure(values=valores)
+        self.combo_producto.set("Seleccione producto...")
+
+    def actualizar_combobox_pagos(self):
+        if not hasattr(self, 'combo_pago'):
+            return
+        try:
+            cuentas = obtener_saldos_cuentas()
+            valores = ["Seleccione método..."]
+            for c in cuentas:
+                valores.append(f"{c['tipo_cuenta']} ({c['num_cuenta']})")
+            self.combo_pago.configure(values=valores)
+            self.combo_pago.set("Seleccione método...")
+        except Exception as e:
+            print(f"Error al actualizar métodos de pago: {e}")
 
     def agregar_producto_lista(self):
         # Función en blanco temporalmente para simular agregar producto
