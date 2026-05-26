@@ -127,7 +127,13 @@ class LoginWindow(ctk.CTk):
                 # Login exitoso: Mostramos mensaje de bienvenida y el nombre del empleado
                 nombre_empleado = empleado['nombre']
                 self.error_label.configure(text=f"¡Bienvenido, {nombre_empleado}!", text_color="#1DB954")
-                # TODO: Cerrar login_window y abrir menu_principal
+                
+                # Importamos y abrimos la ventana del vendedor
+                from gui.vendedor import VendedorWindow
+                self.withdraw()  # Oculta la ventana de login
+                self.vendedor_window = VendedorWindow(self, nombre_vendedor=nombre_empleado)
+                # Cerramos toda la aplicación cuando se cierre la ventana de vendedor
+                self.vendedor_window.protocol("WM_DELETE_WINDOW", self.destroy)
             else:
                 # Si retorna None, es porque el correo/documento o el documento (contraseña) no coinciden
                 self.error_label.configure(text="Credenciales incorrectas.", text_color="#ff4d4d")
