@@ -131,7 +131,7 @@ class LoginWindow(ctk.CTk):
                 # Importamos y abrimos la ventana del vendedor
                 from gui.vendedor import VendedorWindow
                 self.withdraw()  # Oculta la ventana de login
-                self.vendedor_window = VendedorWindow(self)
+                self.vendedor_window = VendedorWindow(self, nombre_vendedor=nombre_empleado)
                 # Cerramos toda la aplicación cuando se cierre la ventana de vendedor
                 self.vendedor_window.protocol("WM_DELETE_WINDOW", self.destroy)
             else:

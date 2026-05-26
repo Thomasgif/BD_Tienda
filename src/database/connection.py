@@ -7,7 +7,7 @@ DB_CONFIG = {
     'host': 'localhost',       # Dirección del servidor de Base de Datos (en este caso local)
     'user': 'root',            # Usuario por defecto de MySQL (común en XAMPP, WAMP, etc.)
     'password': '123456',            # Contraseña de tu MySQL. Coloca aquí tu contraseña si la tienes.
-    'database': 'BD_Tienda',   # Nombre de la base de datos a la cual nos conectaremos
+    'database': 'bd_tienda',   # Nombre de la base de datos a la cual nos conectaremos
     'port': 3306               # Puerto por defecto de MySQL
 }
 
@@ -85,6 +85,79 @@ def validar_credenciales(usuario, contrasena):
     finally:
         # 6. Limpieza y Cierre (Cláusula 'finally' siempre se ejecuta)
         # Es fundamental cerrar el cursor y la conexión para liberar recursos en el servidor MySQL.
+        if cursor is not None:
+            cursor.close()
+        if conexion is not None and conexion.is_connected():
+            conexion.close()
+
+def obtener_clientes():
+    """
+    Obtiene todos los clientes de la base de datos.
+    Retorna una lista de diccionarios.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("SELECT idCliente, nombre, apellidos, documento, telefono, correo FROM CLIENTE")
+        clientes = cursor.fetchall()
+        return clientes
+    except Error as e:
+        raise Exception(f"Error al obtener clientes: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conexion is not None and conexion.is_connected():
+            conexion.close()
+
+def obtener_productos():
+    """
+    Obtiene todos los productos de la base de datos.
+    Retorna una lista de diccionarios.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("SELECT idProducto, nombre, referencia, precio_venta, bodega, descripcion FROM PRODUCTO")
+        productos = cursor.fetchall()
+        return productos
+    except Error as e:
+        raise Exception(f"Error al obtener productos: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conexion is not None and conexion.is_connected():
+            conexion.close()
+
+def obtener_saldos_cuentas():
+    """
+    Obtiene los métodos de pago (cuentas) y el saldo total de cada una
+    basado en los pagos registrados.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion()
+        cursor = conexion.cursor(dictionary=True)
+        consulta = """
+            SELECT 
+                m.idMetodo_de_pago,
+                m.nombre AS tipo_cuenta, 
+                m.num_cuenta, 
+                COALESCE(SUM(p.monto), 0) AS saldo_total
+            FROM METODO_DE_PAGO m
+            LEFT JOIN PAGO p ON m.idMetodo_de_pago = p.idMetodo_de_pago
+            GROUP BY m.idMetodo_de_pago, m.nombre, m.num_cuenta
+        """
+        cursor.execute(consulta)
+        cuentas = cursor.fetchall()
+        return cuentas
+    except Error as e:
+        raise Exception(f"Error al obtener saldos de cuentas: {e}")
+    finally:
         if cursor is not None:
             cursor.close()
         if conexion is not None and conexion.is_connected():
