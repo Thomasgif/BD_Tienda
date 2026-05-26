@@ -1,2 +1,2 @@
 .venv/*
-src/gui/__pycache__/nuevo_cliente.cpython-313.pyc
+__pycache__/*
