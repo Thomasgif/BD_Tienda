@@ -14,7 +14,7 @@ class NuevoClienteWindow(ctk.CTkToplevel):
         else:
             self.title("Crear Nuevo Cliente")
             
-        self.geometry("450x640")
+        self.geometry("450x700")
         self.resizable(False, False)
         self.configure(fg_color="#050505")
         
@@ -40,11 +40,10 @@ class NuevoClienteWindow(ctk.CTkToplevel):
             font=("Arial", 22, "bold"), 
             text_color="#1DB954"
         )
-        self.title_label.pack(pady=(20, 15))
+        self.title_label.pack(side="top", pady=(20, 15))
         
-        # Contenedor para los campos del formulario
+        # Contenedor para los campos del formulario (se empaquetará al final de la inicialización)
         self.form_container = ctk.CTkFrame(self.frame, fg_color="transparent")
-        self.form_container.pack(fill="both", expand=True, padx=25)
         
         # Estilo común para inputs
         input_style = {
@@ -92,13 +91,13 @@ class NuevoClienteWindow(ctk.CTkToplevel):
         self.entry_dir = ctk.CTkEntry(self.form_container, placeholder_text="Ej: Calle 10 # 5-40", **input_style)
         self.entry_dir.pack(fill="x", pady=(0, 10))
         
-        # Mensaje de error / éxito
+        # Mensaje de error / éxito (empaquetado abajo)
         self.error_label = ctk.CTkLabel(self.frame, text="", font=("Arial", 12), text_color="#ff4d4d", wraplength=380)
-        self.error_label.pack(pady=5)
+        self.error_label.pack(side="bottom", pady=5)
         
-        # Botonera
+        # Botonera (empaquetada abajo de todo)
         self.button_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        self.button_frame.pack(fill="x", padx=25, pady=(5, 20))
+        self.button_frame.pack(side="bottom", fill="x", padx=25, pady=(5, 20))
         
         self.btn_cancelar = ctk.CTkButton(
             self.button_frame, 
@@ -123,6 +122,10 @@ class NuevoClienteWindow(ctk.CTkToplevel):
             command=self.guardar_cliente
         )
         self.btn_guardar.pack(side="right", fill="x", expand=True, padx=(10, 0))
+        
+        # Ahora que el título (arriba), y la botonera/error (abajo) están configurados,
+        # expandimos el contenedor del formulario para ocupar todo el espacio del centro.
+        self.form_container.pack(side="top", fill="both", expand=True, padx=25)
         
         # Si es edición, precargar los campos
         if self.es_edicion:
