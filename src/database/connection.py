@@ -6,14 +6,14 @@ from mysql.connector import Error
 DB_CONFIG = {
     'host': 'localhost',       # Dirección del servidor de Base de Datos (en este caso local)
     'user': 'root',            # Usuario por defecto de MySQL (común en XAMPP, WAMP, etc.)
-    'password': '123456',            # Contraseña de tu MySQL. Coloca aquí tu contraseña si la tienes.
-    'database': 'BD_Tienda',   # Nombre de la base de datos a la cual nos conectaremos
+    'password': '123456',      # Contraseña de tu MySQL. Coloca aquí tu contraseña si la tienes.
+    'database': 'bd_tienda',   # Nombre de la base de datos a la cual nos conectaremos
     'port': 3306               # Puerto por defecto de MySQL
 }
 
 def obtener_conexion():
     """
-    
+
     Establece una conexión con la base de datos MySQL.
     
     ¿Cómo funciona?
