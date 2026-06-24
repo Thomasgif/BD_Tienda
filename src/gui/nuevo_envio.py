@@ -263,10 +263,20 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
             self.error_label.configure(text="Por favor complete todos los campos obligatorios (*).")
             return
             
-        # GUARDAR EN BASE DE DATOS (Placeholder)
+        # GUARDAR EN BASE DE DATOS
         try:
-            # Aquí iría la conexión con database.connection para insertar o actualizar el envío
-            # insertar_envio(idCompra=int(compra), fecha=fecha, valor=float(valor), rol=self.rol)
+            from database.connection import insertar_envio
+            
+            # Extraer ID de la compra (ej: "Compra #101 - 2026-06-25")
+            try:
+                id_compra_str = compra.split(" ")[1].replace("#", "")
+                id_compra = int(id_compra_str)
+            except:
+                raise Exception("Formato de compra no válido.")
+                
+            id_empleado = getattr(self.master, 'id_empleado', 1)
+            
+            insertar_envio(idCompra=id_compra, idEmpleado=id_empleado, fecha=fecha, valor=float(valor), rol=self.rol)
             
             mensaje_exito = "¡Envío actualizado con éxito!" if self.es_edicion else "¡Envío registrado con éxito!"
             self.error_label.configure(text=mensaje_exito, text_color="#1DB954")

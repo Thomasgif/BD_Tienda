@@ -467,8 +467,110 @@ class VendedorWindow(ctk.CTkToplevel):
             btn_editar.grid(row=0, column=4, padx=10, pady=8, sticky="w")
 
     def setup_proveedores_tab(self, parent):
-        lbl = ctk.CTkLabel(parent, text="Módulo de Proveedores en desarrollo...", font=("Arial", 16), text_color="#888888")
-        lbl.pack(expand=True)
+        main_container = ctk.CTkFrame(parent, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=40, pady=(0, 20))
+        
+        # Izquierda: Lista de Proveedores
+        left_frame = ctk.CTkFrame(main_container, fg_color="#0a0a0a", corner_radius=15)
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        
+        # Derecha: Detalles del Proveedor y Pedidos
+        self.right_frame_prov = ctk.CTkFrame(main_container, fg_color="#0a0a0a", corner_radius=15)
+        self.right_frame_prov.pack(side="right", fill="both", expand=True, padx=(10, 0))
+        
+        # --- IZQUIERDA: Proveedores ---
+        lbl_titulo = ctk.CTkLabel(left_frame, text="Lista de Proveedores", font=("Arial", 20, "bold"), text_color="#1DB954")
+        lbl_titulo.pack(padx=20, pady=(20, 15), anchor="w")
+        
+        self.scroll_proveedores = ctk.CTkScrollableFrame(left_frame, fg_color="#121212", corner_radius=10)
+        self.scroll_proveedores.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Cargar proveedores
+        try:
+            from database.connection import obtener_proveedores
+            proveedores = obtener_proveedores(self.rol)
+            if not proveedores:
+                ctk.CTkLabel(self.scroll_proveedores, text="No hay proveedores registrados.", text_color="#666666").pack(pady=20)
+            else:
+                for idx, p in enumerate(proveedores):
+                    btn = ctk.CTkButton(
+                        self.scroll_proveedores, 
+                        text=f"{p['nombre']} (NIT: {p.get('nit', 'N/A') or 'N/A'})", 
+                        font=("Arial", 14),
+                        fg_color="#1e1e1e", 
+                        hover_color="#1DB954",
+                        text_color="#ffffff",
+                        anchor="w",
+                        height=40,
+                        command=lambda prov=p: self.mostrar_detalle_proveedor(prov)
+                    )
+                    btn.pack(fill="x", pady=5, padx=5)
+        except Exception as e:
+            ctk.CTkLabel(self.scroll_proveedores, text=f"Error: {e}", text_color="#ff4d4d").pack(pady=20)
+            
+        # --- DERECHA: Placeholder Inicial ---
+        self.lbl_detalle_placeholder = ctk.CTkLabel(self.right_frame_prov, text="Seleccione un proveedor a la izquierda\npara ver detalles y pedidos pendientes.", font=("Arial", 16), text_color="#666666")
+        self.lbl_detalle_placeholder.pack(expand=True)
+
+    def mostrar_detalle_proveedor(self, proveedor):
+        # Limpiar frame derecho
+        for widget in self.right_frame_prov.winfo_children():
+            widget.destroy()
+            
+        # Info del proveedor
+        info_frame = ctk.CTkFrame(self.right_frame_prov, fg_color="transparent")
+        info_frame.pack(fill="x", padx=20, pady=(20, 10))
+        
+        ctk.CTkLabel(info_frame, text=proveedor['nombre'], font=("Arial", 24, "bold"), text_color="#ffffff").pack(anchor="w")
+        ctk.CTkLabel(info_frame, text=f"NIT: {proveedor.get('nit', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
+        ctk.CTkLabel(info_frame, text=f"Teléfono: {proveedor.get('telefono', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
+        ctk.CTkLabel(info_frame, text=f"Correo: {proveedor.get('correo', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
+        ctk.CTkLabel(info_frame, text=f"Dirección: {proveedor.get('direccion', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
+        
+        # Separador
+        separador = ctk.CTkFrame(self.right_frame_prov, height=2, fg_color="#333333")
+        separador.pack(fill="x", padx=20, pady=10)
+        
+        # Pedidos Pendientes
+        ctk.CTkLabel(self.right_frame_prov, text="Pedidos / Envíos Pendientes por Pago", font=("Arial", 18, "bold"), text_color="#1DB954").pack(anchor="w", padx=20, pady=(10, 5))
+        
+        scroll_pedidos = ctk.CTkScrollableFrame(self.right_frame_prov, fg_color="#121212", corner_radius=10)
+        scroll_pedidos.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Cargar pedidos del proveedor seleccionado
+        try:
+            from database.connection import obtener_pedidos_proveedor
+            pedidos = obtener_pedidos_proveedor(proveedor['idProveedor'], self.rol)
+            if not pedidos:
+                ctk.CTkLabel(scroll_pedidos, text="Este proveedor no tiene pedidos registrados.", text_color="#666666").pack(pady=20)
+            else:
+                for idx, ped in enumerate(pedidos):
+                    row_frame = ctk.CTkFrame(scroll_pedidos, fg_color="#1e1e1e" if idx % 2 == 0 else "#2a2a2a", corner_radius=8)
+                    row_frame.pack(fill="x", pady=5)
+                    
+                    id_compra = ped.get('idCompra', 'N/A')
+                    fecha_compra = ped.get('fechacompra', 'N/A')
+                    if hasattr(fecha_compra, 'strftime'): fecha_compra = fecha_compra.strftime('%Y-%m-%d')
+                    
+                    id_envio = ped.get('idEnvio')
+                    fecha_envio = ped.get('fecha_envio', 'N/A')
+                    if hasattr(fecha_envio, 'strftime'): fecha_envio = fecha_envio.strftime('%Y-%m-%d')
+                    
+                    valor = float(ped.get('valor', 0))
+                    
+                    lbl_compra = ctk.CTkLabel(row_frame, text=f"Compra #{id_compra} - Fecha: {fecha_compra}", font=("Arial", 14, "bold"), text_color="#ffffff")
+                    lbl_compra.pack(anchor="w", padx=10, pady=(10, 0))
+                    
+                    if id_envio:
+                        detalle_envio = f"Envío Asociado: #{id_envio} | Fecha Est.: {fecha_envio} | Valor a pagar: ${valor:,.2f}"
+                        color_envio = "#cccccc"
+                    else:
+                        detalle_envio = "Sin envío asociado (Aún no facturado/enviado)"
+                        color_envio = "#888888"
+                        
+                    ctk.CTkLabel(row_frame, text=detalle_envio, font=("Arial", 12), text_color=color_envio).pack(anchor="w", padx=10, pady=(2, 10))
+        except Exception as e:
+            ctk.CTkLabel(scroll_pedidos, text=f"Error al cargar pedidos: {e}", text_color="#ff4d4d").pack(pady=20)
 
     def setup_envios_tab(self, parent):
         # Frame superior para botones y búsqueda
@@ -499,9 +601,19 @@ class VendedorWindow(ctk.CTkToplevel):
         self.scroll_envios = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
         self.scroll_envios.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
-        # Render inicial con lista vacía (hasta conectar con BD)
-        self.todos_envios = [] # Aquí se cargarán desde BD luego
-        self.render_envios(self.todos_envios)
+        # Cargar envíos desde la base de datos
+        self.todos_envios = []
+        self.actualizar_lista_envios()
+
+    def actualizar_lista_envios(self):
+        try:
+            from database.connection import obtener_envios_list
+            self.todos_envios = obtener_envios_list(self.rol)
+            self.filtrar_envios()
+        except Exception as e:
+            print(f"Error al cargar envíos: {e}")
+            self.todos_envios = []
+            self.render_envios(self.todos_envios)
 
     def filtrar_envios(self, event=None):
         query = self.entry_buscar_envio.get().lower()
@@ -563,7 +675,7 @@ class VendedorWindow(ctk.CTkToplevel):
                 fg_color="#333333", 
                 hover_color="#555555",
                 text_color="#ffffff",
-                command=lambda id_env=envio.get('idEnvio'): self.ver_detalle_envio(id_env)
+                command=lambda env=envio: self.ver_detalle_envio(env)
             )
             btn_detalles.grid(row=0, column=4, padx=10, pady=8, sticky="w")
 
@@ -571,9 +683,12 @@ class VendedorWindow(ctk.CTkToplevel):
         from gui.nuevo_envio import NuevoEnvioWindow
         self.nuevo_envio_win = NuevoEnvioWindow(self)
 
-    def ver_detalle_envio(self, id_envio):
-        # Aquí se abrirá un popup/ventana con la lista de productos pedidos, estado, etc.
-        print(f"Ver detalles del envío {id_envio}")
+    def ver_detalle_envio(self, envio):
+        from gui.detalle_envio import DetalleEnvioWindow
+        if hasattr(self, 'detalle_envio_win') and self.detalle_envio_win.winfo_exists():
+            self.detalle_envio_win.focus()
+        else:
+            self.detalle_envio_win = DetalleEnvioWindow(self, envio)
 
     def abrir_nuevo_cliente(self):
         from gui.nuevo_cliente import NuevoClienteWindow
