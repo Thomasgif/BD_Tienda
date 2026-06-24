@@ -1,104 +1,156 @@
 import mysql.connector
 from mysql.connector import Error
 
-# CONFIGURACIÓN DE LA BASE DE DATOS
-# Puedes modificar estos valores según la configuración de tu MySQL local.
-DB_CONFIG = {
-    'host': 'localhost',       # Dirección del servidor de Base de Datos (en este caso local)
-    'user': 'root',            # Usuario por defecto de MySQL (común en XAMPP, WAMP, etc.)
-    'password': '123456',      # Contraseña de tu MySQL. Coloca aquí tu contraseña si la tienes.
-    'database': 'bd_tienda',   # Nombre de la base de datos a la cual nos conectaremos
-    'port': 3306               # Puerto por defecto de MySQL
+# ---------------------------------------------------------------------------
+# CONFIGURACIÓN DE ACCESO A LA BASE DE DATOS POR ROL
+# ---------------------------------------------------------------------------
+# Se definen dos usuarios SQL con privilegios diferenciados (ver Usuarios.sql).
+# NUNCA se usa 'root' para las operaciones de la aplicación.
+#
+#   rol = 1  →  Gerente  → usuario SQL: 'gerente'  (CRUD completo)
+#   rol = 0  →  Empleado → usuario SQL: 'empleado' (permisos restringidos)
+# ---------------------------------------------------------------------------
+
+_HOST = 'localhost'
+_PORT = 3306
+_DATABASE = 'bd_tienda'
+
+# Credenciales para validar el login (acceso mínimo: solo lectura de EMPLEADO)
+# Se utiliza el usuario raíz ÚNICAMENTE en esta consulta inicial de autenticación.
+# Una alternativa más segura sería un usuario de solo lectura sobre EMPLEADO.
+_CONFIG_AUTH = {
+    'host': _HOST,
+    'user': 'log',
+    'password': '123456',
+    'database': _DATABASE,
+    'port': _PORT
 }
 
-def obtener_conexion():
-    """
+# Configuración para el usuario con rol Gerente
+_CONFIG_GERENTE = {
+    'host': _HOST,
+    'user': 'gerente',
+    'password': '0315',
+    'database': _DATABASE,
+    'port': _PORT
+}
 
-    Establece una conexión con la base de datos MySQL.
-    
-    ¿Cómo funciona?
-    Usa la librería mysql-connector-python pasándole el diccionario DB_CONFIG con las credenciales.
-    Retorna el objeto 'conexion' si fue exitoso, o lanza un error si falló.
+# Configuración para el usuario con rol Empleado común
+_CONFIG_EMPLEADO = {
+    'host': _HOST,
+    'user': 'empleado',
+    'password': '2709',
+    'database': _DATABASE,
+    'port': _PORT
+}
+
+
+def _config_por_rol(rol):
     """
+    Retorna el diccionario de configuración de conexión correspondiente al rol.
+    
+    Parámetros:
+        rol (int | bool): 1 para gerente, 0 para empleado común.
+    """
+    return _CONFIG_GERENTE if rol else _CONFIG_EMPLEADO
+
+
+def obtener_conexion(rol=None):
+    """
+    Establece una conexión con la base de datos MySQL usando las credenciales
+    del usuario SQL asociado al rol del empleado autenticado.
+
+    Parámetros:
+        rol (int | None): 
+            - None  → usa el usuario de autenticación (solo para validar_credenciales)
+            - 1     → conecta como 'gerente'
+            - 0     → conecta como 'empleado'
+
+    Retorna:
+        conexion: objeto de conexión activo.
+    Lanza:
+        Exception: si la conexión falla.
+    """
+    config = _CONFIG_AUTH if rol is None else _config_por_rol(rol)
     try:
-        # mysql.connector.connect desempaqueta el diccionario DB_CONFIG usando **
-        conexion = mysql.connector.connect(**DB_CONFIG)
-        
-        # Si la conexión está activa, la retornamos
+        conexion = mysql.connector.connect(**config)
         if conexion.is_connected():
             return conexion
-            
     except Error as e:
-        # Si algo sale mal (servidor apagado, contraseña incorrecta, base de datos inexistente),
-        # lanzamos el error para que la interfaz GUI pueda capturarlo e informar al usuario.
         raise Exception(f"Error al conectar a la base de datos: {e}")
 
 def validar_credenciales(usuario, contrasena):
     """
     Valida si un empleado existe en la base de datos usando su correo o documento como
     identificador de usuario, y su documento como contraseña.
+
+    Ahora también retorna el campo 'rol' (BIT: 1=gerente, 0=empleado) para que la
+    aplicación pueda conectarse a MySQL con el usuario SQL de menor privilegio necesario.
     
     Retorna:
-        dict: Con los datos del empleado (id, nombre, correo) si la credencial es correcta.
+        dict: Con los datos del empleado (idEmpleado, nombre, correo, rol) si las
+              credenciales son correctas.
         None: Si las credenciales no son válidas.
-        Lanza Exception: Si ocurre un problema con la base de datos.
+    Lanza:
+        Exception: Si ocurre un problema con la base de datos.
     """
     conexion = None
     cursor = None
     try:
-        # 1. Obtener la conexión a la base de datos
-        conexion = obtener_conexion()
+        # 1. Conexión de autenticación (acceso temporal solo para verificar credenciales)
+        conexion = obtener_conexion()  # rol=None → usa _CONFIG_AUTH
         
-        # 2. Crear un cursor
-        # El cursor nos permite ejecutar instrucciones SQL y obtener los resultados.
-        # Usamos dictionary=True para que el resultado nos sea devuelto como un diccionario de Python.
+        # 2. Cursor con resultados como diccionario
         cursor = conexion.cursor(dictionary=True)
         
-        # 3. Definir la consulta SQL
-        # NOTA DE SEGURIDAD IMPORTANTE:
-        # Usamos '%s' como marcadores de posición (placeholders) en lugar de concatenar texto directo.
-        # Esto previene un problema de seguridad grave llamado "Inyección SQL".
-        # La consulta busca un empleado cuyo correo o documento sea el ingresado en 'usuario',
-        # y cuyo documento coincida con la 'contrasena'.
+        # 3. Consulta parametrizada (previene Inyección SQL)
+        # Se incluye el campo 'rol' para determinar qué usuario SQL debe usarse
+        # en el resto de la sesión.
         consulta = """
-            SELECT idEmpleado, nombre, documento, correo 
+            SELECT idEmpleado, nombre, documento, correo, rol 
             FROM EMPLEADO 
             WHERE (correo = %s OR documento = %s) 
               AND documento = %s
         """
         
-        # 4. Ejecutar la consulta pasando los valores reales en una tupla
-        # El conector se encarga de escapar y limpiar los valores de forma segura.
+        # 4. Ejecutar con valores seguros
         valores = (usuario, usuario, contrasena)
         cursor.execute(consulta, valores)
         
-        # 5. Obtener el primer resultado (fetchone)
-        # Si no hay coincidencias, retornará None.
+        # 5. Obtener el primer resultado (None si no hay coincidencia)
         empleado = cursor.fetchone()
+
+        # 6. Normalizar el campo 'rol': MySQL retorna BIT como bytes (b'\x01' / b'\x00')
+        #    Lo convertimos a int (1 o 0) para usarlo fácilmente en Python.
+        if empleado and empleado.get('rol') is not None:
+            empleado['rol'] = int.from_bytes(empleado['rol'], byteorder='big') if isinstance(empleado['rol'], (bytes, bytearray)) else int(empleado['rol'])
         
         return empleado
 
     except Error as e:
-        # Si ocurre un error en la consulta o conexión de base de datos
         raise Exception(f"Error de base de datos: {e}")
         
     finally:
-        # 6. Limpieza y Cierre (Cláusula 'finally' siempre se ejecuta)
-        # Es fundamental cerrar el cursor y la conexión para liberar recursos en el servidor MySQL.
+        # 7. Limpieza: siempre cerrar cursor y conexión para liberar recursos
         if cursor is not None:
             cursor.close()
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
-def obtener_clientes():
+def obtener_clientes(rol):
     """
     Obtiene todos los clientes de la base de datos.
-    Retorna una lista de diccionarios.
+
+    Parámetros:
+        rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
+                   Determina con qué usuario SQL se realiza la consulta.
+    Retorna:
+        list[dict]: Lista de clientes.
     """
     conexion = None
     cursor = None
     try:
-        conexion = obtener_conexion()
+        conexion = obtener_conexion(rol)
         cursor = conexion.cursor(dictionary=True)
         cursor.execute("SELECT idCliente, nombre, apellidos, documento, telefono, correo, direccion FROM CLIENTE")
         clientes = cursor.fetchall()
@@ -111,11 +163,13 @@ def obtener_clientes():
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
-def insertar_cliente(nombre, apellidos, documento, telefono=None, correo=None, direccion=None):
+def insertar_cliente(nombre, apellidos, documento, rol, telefono=None, correo=None, direccion=None):
     """
     Inserta un nuevo cliente en la base de datos.
     Mapea cadenas vacías a None para que queden guardadas como NULL en MySQL.
-    
+
+    Parámetros:
+        rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
     Retorna:
         int: El idCliente autogenerado si fue exitoso.
     """
@@ -131,7 +185,7 @@ def insertar_cliente(nombre, apellidos, documento, telefono=None, correo=None, d
     conexion = None
     cursor = None
     try:
-        conexion = obtener_conexion()
+        conexion = obtener_conexion(rol)
         cursor = conexion.cursor()
         
         consulta = """
@@ -153,9 +207,12 @@ def insertar_cliente(nombre, apellidos, documento, telefono=None, correo=None, d
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
-def actualizar_cliente(id_cliente, nombre, apellidos, documento, telefono=None, correo=None, direccion=None):
+def actualizar_cliente(id_cliente, nombre, apellidos, documento, rol, telefono=None, correo=None, direccion=None):
     """
     Actualiza la información de un cliente existente.
+
+    Parámetros:
+        rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
     """
     # Limpieza de valores vacíos para campos opcionales
     telefono = telefono.strip() if telefono and telefono.strip() else None
@@ -169,7 +226,7 @@ def actualizar_cliente(id_cliente, nombre, apellidos, documento, telefono=None, 
     conexion = None
     cursor = None
     try:
-        conexion = obtener_conexion()
+        conexion = obtener_conexion(rol)
         cursor = conexion.cursor()
         
         consulta = """
@@ -190,15 +247,19 @@ def actualizar_cliente(id_cliente, nombre, apellidos, documento, telefono=None, 
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
-def obtener_productos():
+def obtener_productos(rol):
     """
     Obtiene todos los productos de la base de datos.
-    Retorna una lista de diccionarios.
+
+    Parámetros:
+        rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
+    Retorna:
+        list[dict]: Lista de productos.
     """
     conexion = None
     cursor = None
     try:
-        conexion = obtener_conexion()
+        conexion = obtener_conexion(rol)
         cursor = conexion.cursor(dictionary=True)
         cursor.execute("SELECT idProducto, nombre, referencia, precio_venta, bodega, descripcion FROM PRODUCTO")
         productos = cursor.fetchall()
@@ -211,15 +272,20 @@ def obtener_productos():
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
-def obtener_saldos_cuentas():
+def obtener_saldos_cuentas(rol):
     """
     Obtiene los métodos de pago (cuentas) y el saldo total de cada una
     basado en los pagos registrados.
+
+    Parámetros:
+        rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
+    Retorna:
+        list[dict]: Lista de cuentas con saldo acumulado.
     """
     conexion = None
     cursor = None
     try:
-        conexion = obtener_conexion()
+        conexion = obtener_conexion(rol)
         cursor = conexion.cursor(dictionary=True)
         consulta = """
             SELECT 

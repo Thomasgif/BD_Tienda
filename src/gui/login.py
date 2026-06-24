@@ -119,28 +119,32 @@ class LoginWindow(ctk.CTk):
             return
 
         try:
-            # Intentar validar con la base de datos
-            # Recordar: El usuario es correo o documento, y la contraseña es el documento
+            # Validar credenciales contra la base de datos.
+            # 'empleado' retorna un dict con: idEmpleado, nombre, correo, rol (int: 1=gerente, 0=empleado)
             empleado = validar_credenciales(usuario, password)
             
             if empleado:
-                # Login exitoso: Mostramos mensaje de bienvenida y el nombre del empleado
                 nombre_empleado = empleado['nombre']
-                self.error_label.configure(text=f"¡Bienvenido, {nombre_empleado}!", text_color="#1DB954")
+                rol = empleado['rol']  # 1 → gerente, 0 → empleado común
+
+                tipo_rol = "Gerente" if rol == 1 else "Empleado"
+                self.error_label.configure(
+                    text=f"¡Bienvenido, {nombre_empleado}! ({tipo_rol})",
+                    text_color="#1DB954"
+                )
                 
-                # Importamos y abrimos la ventana del vendedor
+                # Abrir la ventana principal pasando el rol para que use el usuario SQL correcto
                 from gui.vendedor import VendedorWindow
                 self.withdraw()  # Oculta la ventana de login
-                self.vendedor_window = VendedorWindow(self, nombre_vendedor=nombre_empleado)
-                # Cerramos toda la aplicación cuando se cierre la ventana de vendedor
+                self.vendedor_window = VendedorWindow(self, nombre_vendedor=nombre_empleado, rol=rol)
+                # Cerrar toda la aplicación cuando se cierre la ventana de vendedor
                 self.vendedor_window.protocol("WM_DELETE_WINDOW", self.destroy)
             else:
-                # Si retorna None, es porque el correo/documento o el documento (contraseña) no coinciden
+                # Credenciales no encontradas en la BD
                 self.error_label.configure(text="Credenciales incorrectas.", text_color="#ff4d4d")
                 
         except Exception as e:
-            # Si el servidor de base de datos está caído o hay otro error,
-            # lo capturamos para evitar que el programa se cierre inesperadamente y se lo mostramos al usuario
+            # Error de conexión u otro problema inesperado
             self.error_label.configure(text=str(e), text_color="#ff4d4d")
 
 

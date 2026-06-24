@@ -1,5 +1,8 @@
 CREATE USER 'gerente'@'localhost' IDENTIFIED BY '0315';
+CREATE USER 'log'@'localhost' IDENTIFIED BY '123456';
 CREATE USER 'empleado'@'localhost' IDENTIFIED BY '2709';
+
+GRANT SELECT ON BD_Tienda.EMPLEADO TO 'log'@'localhost';
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON BD_Tienda.CLIENTE TO 'gerente'@'localhost';
 GRANT SELECT ON BD_Tienda.DETALLE_COMPRA TO 'gerente'@'localhost';
