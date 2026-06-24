@@ -128,3 +128,17 @@ CREATE TABLE DETALLE_VENTA (
     FOREIGN KEY (idProducto) REFERENCES PRODUCTO (idProducto),
     FOREIGN KEY (idVenta) REFERENCES VENTA (idVenta)
 );
+
+--12. ENVIO 
+CREATE TABLE ENVIO (
+    idEnvio INT AUTO_INCREMENT NOT NULL,
+    idCompra INT NOT NULL,
+    idEmpleado INT NOT NULL,
+    fecha DATE,
+    valor DECIMAL(10,2),
+    CONSTRAINT pk_envio PRIMARY KEY (idEnvio),
+    CONSTRAINT fk_idEmpleado FOREIGN KEY (idEmpleado) REFERENCES EMPLEADO (idEmpleado),
+    CONSTRAINT fk_idCompra FOREIGN KEY (idCompra) REFERENCES COMPRA (idCompra)
+);
+
+alter table empleado add column rol bit(1) NOT NULL DEFAULT 0;

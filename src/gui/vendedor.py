@@ -2,8 +2,11 @@ import customtkinter as ctk
 from database.connection import obtener_clientes, obtener_productos, obtener_saldos_cuentas
 
 class VendedorWindow(ctk.CTkToplevel):
-    def __init__(self, master=None, nombre_vendedor="Usuario", *args, **kwargs):
+    def __init__(self, master=None, nombre_vendedor="Usuario", rol=0, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
+        
+        # Almacenar el rol para usarlo en todas las operaciones de BD de esta sesión
+        self.rol = rol  # 1 = gerente, 0 = empleado común
         
         self.title("Sistema de Ventas")
         self.geometry("1000x700")
@@ -41,10 +44,11 @@ class VendedorWindow(ctk.CTkToplevel):
         )
         self.empresa_label.grid(row=1, column=0, padx=20, pady=(0, 0))
 
-        # Rol o usuario
+        # Rol o usuario (muestra el tipo de acceso SQL del empleado)
+        tipo_rol = "Gerente" if self.rol == 1 else "Empleado"
         self.rol_label = ctk.CTkLabel(
             self.sidebar_frame, 
-            text=f"Vendedor: {nombre_vendedor}", 
+            text=f"{tipo_rol}: {nombre_vendedor}", 
             font=("Arial", 14),
             text_color="#1DB954"
         )
@@ -82,9 +86,9 @@ class VendedorWindow(ctk.CTkToplevel):
         )
         self.logout_button.grid(row=8, column=0, padx=20, pady=(10, 30), sticky="ew")
 
-        # Cargar clientes iniciales
+        # Cargar clientes iniciales usando el usuario SQL del rol del empleado
         try:
-            self.todos_clientes = obtener_clientes()
+            self.todos_clientes = obtener_clientes(self.rol)
         except Exception as e:
             self.todos_clientes = []
             print(f"Error al cargar clientes: {e}")
@@ -153,7 +157,7 @@ class VendedorWindow(ctk.CTkToplevel):
         self.scroll_productos.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
         try:
-            self.todos_productos = obtener_productos()
+            self.todos_productos = obtener_productos(self.rol)
             self.render_productos(self.todos_productos)
         except Exception as e:
             ctk.CTkLabel(self.scroll_productos, text=f"Error cargando productos:\n{e}", text_color="#ff4d4d").pack(pady=20)
@@ -324,7 +328,7 @@ class VendedorWindow(ctk.CTkToplevel):
         scroll_frame.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
         try:
-            cuentas = obtener_saldos_cuentas()
+            cuentas = obtener_saldos_cuentas(self.rol)
             if not cuentas:
                 ctk.CTkLabel(scroll_frame, text="No hay cuentas registradas aún.", text_color="#888888").pack(pady=20)
             else:
@@ -389,7 +393,7 @@ class VendedorWindow(ctk.CTkToplevel):
         self.scroll_clientes.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
         try:
-            self.todos_clientes = obtener_clientes()
+            self.todos_clientes = obtener_clientes(self.rol)
             self.render_clientes(self.todos_clientes)
         except Exception as e:
             ctk.CTkLabel(self.scroll_clientes, text=f"Error cargando clientes:\n{e}", text_color="#ff4d4d").pack(pady=20)
@@ -470,7 +474,7 @@ class VendedorWindow(ctk.CTkToplevel):
 
     def actualizar_lista_clientes(self):
         try:
-            self.todos_clientes = obtener_clientes()
+            self.todos_clientes = obtener_clientes(self.rol)
             self.render_clientes(self.todos_clientes)
             self.actualizar_combobox_clientes()
         except Exception as e:
@@ -498,10 +502,10 @@ class VendedorWindow(ctk.CTkToplevel):
         if not hasattr(self, 'combo_pago'):
             return
         try:
-            cuentas = obtener_saldos_cuentas()
+            cuentas = obtener_saldos_cuentas(self.rol)
             valores = ["Seleccione método..."]
             for c in cuentas:
-                valores.append(f"{c['tipo_cuenta']} ({c['num_cuenta']})")
+                valores.append(f"{c['tipo_cuenta']} ({c['num_cuenta']})") 
             self.combo_pago.configure(values=valores)
             self.combo_pago.set("Seleccione método...")
         except Exception as e:

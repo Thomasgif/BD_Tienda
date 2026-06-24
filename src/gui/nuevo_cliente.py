@@ -8,6 +8,10 @@ class NuevoClienteWindow(ctk.CTkToplevel):
         self.cliente_datos = cliente_datos
         self.es_edicion = cliente_datos is not None
         
+        # Heredar el rol del empleado desde la ventana padre (VendedorWindow)
+        # Esto garantiza que las operaciones se ejecuten con el usuario SQL correcto.
+        self.rol = getattr(master, 'rol', 0)
+        
         # Configurar la ventana
         if self.es_edicion:
             self.title("Editar Cliente")
@@ -187,6 +191,7 @@ class NuevoClienteWindow(ctk.CTkToplevel):
                     nombre=nombre,
                     apellidos=apellidos,
                     documento=doc,
+                    rol=self.rol,
                     telefono=tel,
                     correo=correo,
                     direccion=direccion
@@ -197,6 +202,7 @@ class NuevoClienteWindow(ctk.CTkToplevel):
                     nombre=nombre,
                     apellidos=apellidos,
                     documento=doc,
+                    rol=self.rol,
                     telefono=tel,
                     correo=correo,
                     direccion=direccion
