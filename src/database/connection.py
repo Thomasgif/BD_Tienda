@@ -307,3 +307,31 @@ def obtener_saldos_cuentas(rol):
             cursor.close()
         if conexion is not None and conexion.is_connected():
             conexion.close()
+
+def obtener_proveedores(rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("SELECT idProveedor, nombre, nit FROM PROVEEDOR")
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener proveedores: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+def obtener_compras(rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("SELECT idCompra, fechacompra, idProveedor FROM COMPRA")
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener compras: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()

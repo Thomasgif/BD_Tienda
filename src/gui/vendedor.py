@@ -20,7 +20,7 @@ class VendedorWindow(ctk.CTkToplevel):
         # --- Sidebar (Barra de Navegación Lateral) ---
         self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color="#0a0a0a")
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(7, weight=1) # Espacio vacío ANTES del botón de cerrar sesión
+        self.sidebar_frame.grid_rowconfigure(10, weight=1) # Espacio vacío ANTES del botón de cerrar sesión
 
         # Etiqueta para el Logo (Placeholder)
         self.logo_placeholder = ctk.CTkLabel(
@@ -56,7 +56,7 @@ class VendedorWindow(ctk.CTkToplevel):
 
         # Botones de navegación
         self.nav_buttons = {}
-        nav_items = ["Productos", "Ventas", "Cuentas", "Clientes"]
+        nav_items = ["Productos", "Ventas", "Cuentas", "Clientes", "Proveedores", "Envíos"]
         
         for i, item in enumerate(nav_items, start=3):
             btn = ctk.CTkButton(
@@ -84,7 +84,7 @@ class VendedorWindow(ctk.CTkToplevel):
             font=("Arial", 14, "bold"),
             command=self.logout
         )
-        self.logout_button.grid(row=8, column=0, padx=20, pady=(10, 30), sticky="ew")
+        self.logout_button.grid(row=11, column=0, padx=20, pady=(10, 30), sticky="ew")
 
         # Cargar clientes iniciales usando el usuario SQL del rol del empleado
         try:
@@ -118,6 +118,10 @@ class VendedorWindow(ctk.CTkToplevel):
                 self.setup_cuentas_tab(frame)
             elif item == "Clientes":
                 self.setup_clientes_tab(frame)
+            elif item == "Proveedores":
+                self.setup_proveedores_tab(frame)
+            elif item == "Envíos":
+                self.setup_envios_tab(frame)
 
         # Seleccionar la pestaña por defecto
         self.current_frame = None
@@ -461,6 +465,115 @@ class VendedorWindow(ctk.CTkToplevel):
                 command=lambda doc=cliente['documento']: self.editar_cliente(doc)
             )
             btn_editar.grid(row=0, column=4, padx=10, pady=8, sticky="w")
+
+    def setup_proveedores_tab(self, parent):
+        lbl = ctk.CTkLabel(parent, text="Módulo de Proveedores en desarrollo...", font=("Arial", 16), text_color="#888888")
+        lbl.pack(expand=True)
+
+    def setup_envios_tab(self, parent):
+        # Frame superior para botones y búsqueda
+        top_bar = ctk.CTkFrame(parent, fg_color="transparent")
+        top_bar.pack(fill="x", padx=40, pady=(0, 20))
+        
+        lbl_lista = ctk.CTkLabel(top_bar, text="Lista de Pedidos/Envíos de Proveedores", font=("Arial", 18, "bold"), text_color="#aaaaaa")
+        lbl_lista.pack(side="left")
+
+        # Botón para registrar nuevo envío
+        btn_nuevo_envio = ctk.CTkButton(
+            top_bar, 
+            text="+ Nuevo Envío", 
+            font=("Arial", 14, "bold"),
+            fg_color="#1DB954",
+            hover_color="#179643",
+            text_color="black",
+            command=self.abrir_nuevo_envio
+        )
+        btn_nuevo_envio.pack(side="right")
+
+        # Barra de búsqueda
+        self.entry_buscar_envio = ctk.CTkEntry(top_bar, placeholder_text="Buscar por proveedor...", width=200)
+        self.entry_buscar_envio.pack(side="right", padx=(0, 20))
+        self.entry_buscar_envio.bind("<KeyRelease>", self.filtrar_envios)
+
+        # Frame escroleable para la lista
+        self.scroll_envios = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
+        self.scroll_envios.pack(fill="both", expand=True, padx=40, pady=(0, 20))
+
+        # Render inicial con lista vacía (hasta conectar con BD)
+        self.todos_envios = [] # Aquí se cargarán desde BD luego
+        self.render_envios(self.todos_envios)
+
+    def filtrar_envios(self, event=None):
+        query = self.entry_buscar_envio.get().lower()
+        if not query:
+            filtrados = self.todos_envios
+        else:
+            # Asumimos que los envíos tendrán clave 'proveedor'
+            filtrados = [e for e in self.todos_envios if query in str(e.get('proveedor', '')).lower()]
+        self.render_envios(filtrados)
+
+    def render_envios(self, envios):
+        for widget in self.scroll_envios.winfo_children():
+            widget.destroy()
+
+        if not envios:
+            ctk.CTkLabel(self.scroll_envios, text="No hay envíos registrados aún.", text_color="#888888").pack(pady=20)
+            return
+
+        # Encabezados
+        headers_frame = ctk.CTkFrame(self.scroll_envios, fg_color="#1e1e1e", corner_radius=5)
+        headers_frame.pack(fill="x", pady=(0, 10))
+        
+        headers_frame.grid_columnconfigure(0, weight=1) # ID
+        headers_frame.grid_columnconfigure(1, weight=2) # Proveedor
+        headers_frame.grid_columnconfigure(2, weight=1) # Fecha
+        headers_frame.grid_columnconfigure(3, weight=1) # Valor a pagar
+        headers_frame.grid_columnconfigure(4, weight=1) # Acciones
+        
+        ctk.CTkLabel(headers_frame, text="ID Envío", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(headers_frame, text="Proveedor", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(headers_frame, text="Fecha", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=2, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(headers_frame, text="Valor a Pagar", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=3, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(headers_frame, text="Acciones", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=4, padx=10, pady=10, sticky="w")
+        
+        # Filas de envíos
+        for idx, envio in enumerate(envios):
+            row_frame = ctk.CTkFrame(self.scroll_envios, fg_color="#121212" if idx % 2 == 0 else "#0a0a0a", corner_radius=0)
+            row_frame.pack(fill="x")
+            
+            row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(1, weight=2)
+            row_frame.grid_columnconfigure(2, weight=1)
+            row_frame.grid_columnconfigure(3, weight=1)
+            row_frame.grid_columnconfigure(4, weight=1)
+            
+            ctk.CTkLabel(row_frame, text=envio.get('idEnvio', 'N/A'), text_color="#cccccc").grid(row=0, column=0, padx=10, pady=8, sticky="w")
+            ctk.CTkLabel(row_frame, text=envio.get('proveedor', 'N/A'), text_color="#ffffff").grid(row=0, column=1, padx=10, pady=8, sticky="w")
+            ctk.CTkLabel(row_frame, text=envio.get('fecha', 'N/A'), text_color="#cccccc").grid(row=0, column=2, padx=10, pady=8, sticky="w")
+            
+            valor = envio.get('valor', 0)
+            ctk.CTkLabel(row_frame, text=f"${valor:,.2f}", text_color="#cccccc").grid(row=0, column=3, padx=10, pady=8, sticky="w")
+            
+            btn_detalles = ctk.CTkButton(
+                row_frame, 
+                text="Ver Detalles", 
+                width=80, 
+                height=28, 
+                font=("Arial", 12, "bold"),
+                fg_color="#333333", 
+                hover_color="#555555",
+                text_color="#ffffff",
+                command=lambda id_env=envio.get('idEnvio'): self.ver_detalle_envio(id_env)
+            )
+            btn_detalles.grid(row=0, column=4, padx=10, pady=8, sticky="w")
+
+    def abrir_nuevo_envio(self):
+        from gui.nuevo_envio import NuevoEnvioWindow
+        self.nuevo_envio_win = NuevoEnvioWindow(self)
+
+    def ver_detalle_envio(self, id_envio):
+        # Aquí se abrirá un popup/ventana con la lista de productos pedidos, estado, etc.
+        print(f"Ver detalles del envío {id_envio}")
 
     def abrir_nuevo_cliente(self):
         from gui.nuevo_cliente import NuevoClienteWindow
