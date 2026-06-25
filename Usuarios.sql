@@ -16,6 +16,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON BD_Tienda.PROVEEDOR TO 'gerente'@'localh
 GRANT SELECT, INSERT, UPDATE, DELETE ON BD_Tienda.VENTA TO 'gerente'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON BD_Tienda.COMPRA TO 'gerente'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON BD_Tienda.ENVIO TO 'gerente'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON BD_Tienda.PAGO_EMPLEADO TO 'gerente'@'localhost';
 
 
 GRANT SELECT, INSERT, UPDATE ON BD_Tienda.CLIENTE TO 'empleado'@'localhost';

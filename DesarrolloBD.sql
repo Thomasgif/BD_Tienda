@@ -142,3 +142,15 @@ CREATE TABLE ENVIO (
 );
 
 alter table empleado add column rol bit(1) NOT NULL DEFAULT 0;
+
+-- 13. PAGO_EMPLEADO (registro de pagos de nómina al empleado)
+CREATE TABLE IF NOT EXISTS PAGO_EMPLEADO (
+    idPago_empleado INT AUTO_INCREMENT NOT NULL,
+    idEmpleado      INT NOT NULL,
+    idMetodo_de_pago INT NOT NULL,
+    monto           DECIMAL(10, 2) NOT NULL CHECK (monto >= 0),
+    fecha_pago      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_pago_empleado PRIMARY KEY (idPago_empleado),
+    FOREIGN KEY (idEmpleado) REFERENCES EMPLEADO (idEmpleado),
+    FOREIGN KEY (idMetodo_de_pago) REFERENCES METODO_DE_PAGO (idMetodo_de_pago)
+);

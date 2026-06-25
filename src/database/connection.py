@@ -608,3 +608,109 @@ def obtener_detalle_compra(idCompra, rol):
     finally:
         if cursor is not None: cursor.close()
         if conexion is not None and conexion.is_connected(): conexion.close()
+
+# ---------------------------------------------------------------------------
+# MÓDULO GERENTE — NÓMINA DE EMPLEADOS
+# ---------------------------------------------------------------------------
+
+def obtener_empleados(rol):
+    """
+    Obtiene todos los empleados con sus datos de nómina.
+    Normaliza el campo 'rol' (BIT) a int (1=gerente, 0=empleado).
+
+    Retorna:
+        list[dict]: idEmpleado, nombre, documento, trabajo_hora,
+                    pago_hora, telefono, correo, rol (int).
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT idEmpleado, nombre, documento,
+                   trabajo_hora, pago_hora, telefono, correo, rol
+            FROM EMPLEADO
+            ORDER BY nombre
+        """)
+        empleados = cursor.fetchall()
+        # Normalizar campo BIT
+        for emp in empleados:
+            r = emp.get('rol', 0)
+            emp['rol'] = int.from_bytes(r, 'big') if isinstance(r, (bytes, bytearray)) else int(r or 0)
+        return empleados
+    except Error as e:
+        raise Exception(f"Error al obtener empleados: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def obtener_ventas_mes_empleado(id_empleado, rol):
+    """
+    Obtiene las ventas del mes y año actuales de un empleado específico.
+
+    Retorna:
+        list[dict]: idVenta, fecha_venta, valor_total, estado_pago.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        consulta = """
+            SELECT idVenta, fecha_venta, valor_total, estado_pago
+            FROM VENTA
+            WHERE idEmpleado = %s
+              AND MONTH(fecha_venta) = MONTH(CURDATE())
+              AND YEAR(fecha_venta)  = YEAR(CURDATE())
+            ORDER BY fecha_venta DESC
+        """
+        cursor.execute(consulta, (id_empleado,))
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener ventas del empleado: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def pagar_empleado(id_empleado, id_metodo_pago, monto, rol):
+    """
+    Procesa el pago de nómina de un empleado en una transacción atómica:
+      1. Inserta un registro en PAGO_EMPLEADO.
+      2. Resetea trabajo_hora = 0 en EMPLEADO.
+
+    Parámetros:
+        id_empleado   (int): ID del empleado a pagar.
+        id_metodo_pago (int): Cuenta empresa de la que sale el dinero.
+        monto         (float): Total a pagar (pago_hora × trabajo_hora).
+        rol           (int): Rol SQL activo (debe ser 1=gerente).
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+
+        # 1. Registrar el pago
+        cursor.execute(
+            "INSERT INTO PAGO_EMPLEADO (idEmpleado, idMetodo_de_pago, monto) VALUES (%s, %s, %s)",
+            (id_empleado, id_metodo_pago, monto)
+        )
+
+        # 2. Reiniciar horas trabajadas
+        cursor.execute(
+            "UPDATE EMPLEADO SET trabajo_hora = 0 WHERE idEmpleado = %s",
+            (id_empleado,)
+        )
+
+        conexion.commit()
+    except Error as e:
+        if conexion:
+            conexion.rollback()
+        raise Exception(f"Error al procesar pago de empleado: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
