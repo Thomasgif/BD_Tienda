@@ -96,7 +96,7 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
         else:
             self.title("Registrar Nuevo Envío")
             
-        self.geometry("450x620")
+        self.geometry("450x690")
         self.resizable(False, False)
         self.configure(fg_color="#050505")
         
@@ -148,9 +148,10 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
         
         # Cargar datos desde la base de datos
         try:
-            from database.connection import obtener_proveedores, obtener_compras
+            from database.connection import obtener_proveedores, obtener_compras, obtener_saldos_cuentas
             proveedores_db = obtener_proveedores(self.rol)
             compras_db = obtener_compras(self.rol)
+            cuentas_db = obtener_saldos_cuentas(self.rol)
             
             # Formatear la lista para el combobox
             proveedores_lista = ["Seleccione proveedor..."] + [f"{p['nombre']} (NIT: {p['nit'] or 'N/A'}) | ID: {p['idProveedor']}" for p in proveedores_db]
@@ -160,10 +161,15 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
                 return f.strftime('%Y-%m-%d') if hasattr(f, 'strftime') else str(f)
                 
             compras_lista = ["Seleccione compra..."] + [f"Compra #{c['idCompra']} - {formato_fecha(c['fechacompra'])}" for c in compras_db]
+            
+            self._cuentas_envio = {f"{c['tipo_cuenta']} ({c['num_cuenta']})": c['idMetodo_de_pago'] for c in cuentas_db}
+            cuentas_lista = ["Seleccione método..."] + list(self._cuentas_envio.keys())
         except Exception as e:
             print(f"Error al cargar combos desde DB: {e}")
             proveedores_lista = ["Seleccione proveedor..."]
             compras_lista = ["Seleccione compra..."]
+            cuentas_lista = ["Seleccione método..."]
+            self._cuentas_envio = {}
             
         # 1. Nombre del Proveedor
         self.lbl_proveedor = ctk.CTkLabel(self.form_container, text="Seleccionar Proveedor *", font=("Arial", 12, "bold"), text_color="#aaaaaa")
@@ -205,6 +211,13 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
         self.lbl_valor.pack(anchor="w", pady=(5, 2))
         self.entry_valor = ctk.CTkEntry(self.form_container, placeholder_text="Ej: 15000", **input_style)
         self.entry_valor.pack(fill="x", pady=(0, 10))
+        
+        # 5. Método de Pago (Cuenta a debitar)
+        self.lbl_pago = ctk.CTkLabel(self.form_container, text="Método de Pago (Cuenta a debitar) *", font=("Arial", 12, "bold"), text_color="#aaaaaa")
+        self.lbl_pago.pack(anchor="w", pady=(5, 2))
+        
+        self.combo_pago = ctk.CTkComboBox(self.form_container, values=cuentas_lista, **combo_style)
+        self.combo_pago.pack(fill="x", pady=(0, 10))
         
         # Mensaje de error / éxito
         self.error_label = ctk.CTkLabel(self.frame, text="", font=("Arial", 12), text_color="#ff4d4d", wraplength=380)
@@ -249,6 +262,14 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
         self.combo_compra.set(str(self.envio_datos.get('idCompra', 'Seleccione compra...')))
         self.entry_fecha.insert(0, self.envio_datos.get('fecha', ''))
         self.entry_valor.insert(0, str(self.envio_datos.get('valor', '')))
+        
+        # precargar cuenta
+        num_cuenta = self.envio_datos.get('num_cuenta')
+        metodo_pago = self.envio_datos.get('metodo_pago')
+        if num_cuenta and metodo_pago:
+            self.combo_pago.set(f"{metodo_pago} ({num_cuenta})")
+        else:
+            self.combo_pago.set("Seleccione método...")
 
     def guardar_envio(self):
         self.error_label.configure(text="", text_color="#ff4d4d")
@@ -257,9 +278,10 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
         compra = self.combo_compra.get()
         fecha = self.entry_fecha.get().strip()
         valor = self.entry_valor.get().strip()
+        metodo_pago = self.combo_pago.get()
         
         # Validaciones básicas
-        if proveedor == "Seleccione proveedor..." or compra == "Seleccione compra..." or not fecha or not valor:
+        if proveedor == "Seleccione proveedor..." or compra == "Seleccione compra..." or metodo_pago == "Seleccione método..." or not fecha or not valor:
             self.error_label.configure(text="Por favor complete todos los campos obligatorios (*).")
             return
             
@@ -274,9 +296,13 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
             except:
                 raise Exception("Formato de compra no válido.")
                 
+            id_metodo = self._cuentas_envio.get(metodo_pago)
+            if not id_metodo:
+                raise Exception("Seleccione un método de pago válido.")
+                
             id_empleado = getattr(self.master, 'id_empleado', 1)
             
-            insertar_envio(idCompra=id_compra, idEmpleado=id_empleado, fecha=fecha, valor=float(valor), rol=self.rol)
+            insertar_envio(idCompra=id_compra, idEmpleado=id_empleado, fecha=fecha, valor=float(valor), idMetodo_de_pago=id_metodo, rol=self.rol)
             
             mensaje_exito = "¡Envío actualizado con éxito!" if self.es_edicion else "¡Envío registrado con éxito!"
             self.error_label.configure(text=mensaje_exito, text_color="#1DB954")

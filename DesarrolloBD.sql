@@ -154,3 +154,23 @@ CREATE TABLE IF NOT EXISTS PAGO_EMPLEADO (
     FOREIGN KEY (idEmpleado) REFERENCES EMPLEADO (idEmpleado),
     FOREIGN KEY (idMetodo_de_pago) REFERENCES METODO_DE_PAGO (idMetodo_de_pago)
 );
+
+-- 14. Modificaciones para Gestión de Balance y Saldos
+ALTER TABLE METODO_DE_PAGO ADD COLUMN saldo DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (saldo >= 0);
+
+ALTER TABLE COMPRA ADD COLUMN idMetodo_de_pago INT,
+    ADD CONSTRAINT fk_compra_metodo_pago FOREIGN KEY (idMetodo_de_pago) REFERENCES METODO_DE_PAGO (idMetodo_de_pago);
+
+ALTER TABLE ENVIO ADD COLUMN idMetodo_de_pago INT,
+    ADD CONSTRAINT fk_envio_metodo_pago FOREIGN KEY (idMetodo_de_pago) REFERENCES METODO_DE_PAGO (idMetodo_de_pago);
+
+-- 15. GASTO (registro de gastos generales de la empresa)
+CREATE TABLE IF NOT EXISTS GASTO (
+    idGasto INT AUTO_INCREMENT NOT NULL,
+    idMetodo_de_pago INT NOT NULL,
+    descripcion VARCHAR(200) NOT NULL,
+    monto DECIMAL(10, 2) NOT NULL CHECK (monto >= 0),
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_gasto PRIMARY KEY (idGasto),
+    FOREIGN KEY (idMetodo_de_pago) REFERENCES METODO_DE_PAGO (idMetodo_de_pago)
+);

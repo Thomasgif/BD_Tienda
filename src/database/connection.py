@@ -275,12 +275,12 @@ def obtener_productos(rol):
 def obtener_saldos_cuentas(rol):
     """
     Obtiene los métodos de pago (cuentas) y el saldo total de cada una
-    basado en los pagos registrados.
+    directamente desde la columna saldo.
 
     Parámetros:
         rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
     Retorna:
-        list[dict]: Lista de cuentas con saldo acumulado.
+        list[dict]: Lista de cuentas con saldo.
     """
     conexion = None
     cursor = None
@@ -289,13 +289,11 @@ def obtener_saldos_cuentas(rol):
         cursor = conexion.cursor(dictionary=True)
         consulta = """
             SELECT 
-                m.idMetodo_de_pago,
-                m.nombre AS tipo_cuenta, 
-                m.num_cuenta, 
-                COALESCE(SUM(p.monto), 0) AS saldo_total
-            FROM METODO_DE_PAGO m
-            LEFT JOIN PAGO p ON m.idMetodo_de_pago = p.idMetodo_de_pago
-            GROUP BY m.idMetodo_de_pago, m.nombre, m.num_cuenta
+                idMetodo_de_pago,
+                nombre AS tipo_cuenta, 
+                num_cuenta, 
+                saldo AS saldo_total
+            FROM METODO_DE_PAGO
         """
         cursor.execute(consulta)
         cuentas = cursor.fetchall()
@@ -469,41 +467,7 @@ def obtener_productos(rol):
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
-def obtener_saldos_cuentas(rol):
-    """
-    Obtiene los métodos de pago (cuentas) y el saldo total de cada una
-    basado en los pagos registrados.
 
-    Parámetros:
-        rol (int): Rol del empleado autenticado (1=gerente, 0=empleado).
-    Retorna:
-        list[dict]: Lista de cuentas con saldo acumulado.
-    """
-    conexion = None
-    cursor = None
-    try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
-        consulta = """
-            SELECT 
-                m.idMetodo_de_pago,
-                m.nombre AS tipo_cuenta, 
-                m.num_cuenta, 
-                COALESCE(SUM(p.monto), 0) AS saldo_total
-            FROM METODO_DE_PAGO m
-            LEFT JOIN PAGO p ON m.idMetodo_de_pago = p.idMetodo_de_pago
-            GROUP BY m.idMetodo_de_pago, m.nombre, m.num_cuenta
-        """
-        cursor.execute(consulta)
-        cuentas = cursor.fetchall()
-        return cuentas
-    except Error as e:
-        raise Exception(f"Error al obtener saldos de cuentas: {e}")
-    finally:
-        if cursor is not None:
-            cursor.close()
-        if conexion is not None and conexion.is_connected():
-            conexion.close()
 
 def obtener_proveedores(rol):
     conexion = None
@@ -553,6 +517,8 @@ def obtener_pedidos_proveedor(id_proveedor, rol):
         if cursor is not None: cursor.close()
         if conexion is not None and conexion.is_connected(): conexion.close()
 
+
+
 def obtener_envios_list(rol):
     conexion = None
     cursor = None
@@ -560,10 +526,12 @@ def obtener_envios_list(rol):
         conexion = obtener_conexion(rol)
         cursor = conexion.cursor(dictionary=True)
         consulta = """
-            SELECT e.idEnvio, e.idCompra, e.fecha, e.valor, p.nombre AS proveedor
+            SELECT e.idEnvio, e.idCompra, e.fecha, e.valor, p.nombre AS proveedor,
+                   e.idMetodo_de_pago, m.nombre AS metodo_pago, m.num_cuenta
             FROM ENVIO e
             JOIN COMPRA c ON e.idCompra = c.idCompra
             JOIN PROVEEDOR p ON c.idProveedor = p.idProveedor
+            LEFT JOIN METODO_DE_PAGO m ON e.idMetodo_de_pago = m.idMetodo_de_pago
             ORDER BY e.fecha DESC
         """
         cursor.execute(consulta)
@@ -574,17 +542,33 @@ def obtener_envios_list(rol):
         if cursor is not None: cursor.close()
         if conexion is not None and conexion.is_connected(): conexion.close()
 
-def insertar_envio(idCompra, idEmpleado, fecha, valor, rol):
+
+def insertar_envio(idCompra, idEmpleado, fecha, valor, idMetodo_de_pago, rol):
     conexion = None
     cursor = None
     try:
         conexion = obtener_conexion(rol)
         cursor = conexion.cursor()
-        consulta = "INSERT INTO ENVIO (idCompra, idEmpleado, fecha, valor) VALUES (%s, %s, %s, %s)"
-        cursor.execute(consulta, (idCompra, idEmpleado, fecha, valor))
+        
+        # Restar del saldo de la cuenta
+        cursor.execute(
+            "UPDATE METODO_DE_PAGO SET saldo = saldo - %s WHERE idMetodo_de_pago = %s",
+            (valor, idMetodo_de_pago)
+        )
+        
+        consulta = "INSERT INTO ENVIO (idCompra, idEmpleado, fecha, valor, idMetodo_de_pago) VALUES (%s, %s, %s, %s, %s)"
+        cursor.execute(consulta, (idCompra, idEmpleado, fecha, valor, idMetodo_de_pago))
         conexion.commit()
-    except Exception as e:
+    except Error as e:
+        if conexion:
+            conexion.rollback()
+        if e.errno == 3819 or "CONSTRAINT" in str(e).upper():
+            raise Exception("Saldo insuficiente en la cuenta para realizar el envío.")
         raise Exception(f"Error al registrar el envío: {e}")
+    except Exception as e:
+        if conexion:
+            conexion.rollback()
+        raise e
     finally:
         if cursor is not None: cursor.close()
         if conexion is not None and conexion.is_connected(): conexion.close()
@@ -678,8 +662,9 @@ def obtener_ventas_mes_empleado(id_empleado, rol):
 def pagar_empleado(id_empleado, id_metodo_pago, monto, rol):
     """
     Procesa el pago de nómina de un empleado en una transacción atómica:
-      1. Inserta un registro en PAGO_EMPLEADO.
-      2. Resetea trabajo_hora = 0 en EMPLEADO.
+      1. Resta el saldo del método de pago de la empresa.
+      2. Inserta un registro en PAGO_EMPLEADO.
+      3. Resetea trabajo_hora = 0 en EMPLEADO.
 
     Parámetros:
         id_empleado   (int): ID del empleado a pagar.
@@ -693,13 +678,19 @@ def pagar_empleado(id_empleado, id_metodo_pago, monto, rol):
         conexion = obtener_conexion(rol)
         cursor = conexion.cursor()
 
-        # 1. Registrar el pago
+        # 1. Restar del saldo de la cuenta
+        cursor.execute(
+            "UPDATE METODO_DE_PAGO SET saldo = saldo - %s WHERE idMetodo_de_pago = %s",
+            (monto, id_metodo_pago)
+        )
+
+        # 2. Registrar el pago
         cursor.execute(
             "INSERT INTO PAGO_EMPLEADO (idEmpleado, idMetodo_de_pago, monto) VALUES (%s, %s, %s)",
             (id_empleado, id_metodo_pago, monto)
         )
 
-        # 2. Reiniciar horas trabajadas
+        # 3. Reiniciar horas trabajadas
         cursor.execute(
             "UPDATE EMPLEADO SET trabajo_hora = 0 WHERE idEmpleado = %s",
             (id_empleado,)
@@ -709,8 +700,162 @@ def pagar_empleado(id_empleado, id_metodo_pago, monto, rol):
     except Error as e:
         if conexion:
             conexion.rollback()
+        if e.errno == 3819 or "CONSTRAINT" in str(e).upper():
+            raise Exception("Saldo insuficiente en la cuenta para realizar el pago de nómina.")
         raise Exception(f"Error al procesar pago de empleado: {e}")
     finally:
         if cursor is not None: cursor.close()
         if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+# ---------------------------------------------------------------------------
+# MÓDULO GERENTE — CRUD DE EMPLEADOS
+# ---------------------------------------------------------------------------
+
+def insertar_empleado(nombre, documento, trabajo_hora, pago_hora, telefono, correo, rol_empleado, rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        consulta = """
+            INSERT INTO EMPLEADO (nombre, documento, trabajo_hora, pago_hora, telefono, correo, rol)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(consulta, (nombre, documento, trabajo_hora, pago_hora, telefono, correo, rol_empleado))
+        conexion.commit()
+    except Error as e:
+        if e.errno == 1062:
+            raise Exception("El documento ingresado ya está registrado para otro empleado.")
+        raise Exception(f"Error al registrar empleado: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def actualizar_empleado(id_empleado, nombre, documento, trabajo_hora, pago_hora, telefono, correo, rol_empleado, rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        consulta = """
+            UPDATE EMPLEADO
+            SET nombre = %s, documento = %s, trabajo_hora = %s, pago_hora = %s, telefono = %s, correo = %s, rol = %s
+            WHERE idEmpleado = %s
+        """
+        cursor.execute(consulta, (nombre, documento, trabajo_hora, pago_hora, telefono, correo, rol_empleado, id_empleado))
+        conexion.commit()
+    except Error as e:
+        if e.errno == 1062:
+            raise Exception("El documento ingresado ya está registrado para otro empleado.")
+        raise Exception(f"Error al actualizar empleado: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def eliminar_empleado(id_empleado, rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        cursor.execute("DELETE FROM EMPLEADO WHERE idEmpleado = %s", (id_empleado,))
+        conexion.commit()
+    except Error as e:
+        if e.errno == 1451:
+            raise Exception("No se puede eliminar el empleado porque tiene registros asociados (ventas, compras, etc.).")
+        raise Exception(f"Error al eliminar empleado: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+# ---------------------------------------------------------------------------
+# MÓDULO GERENTE — BALANCE & GASTOS & CUENTAS POR PAGAR
+# ---------------------------------------------------------------------------
+
+def obtener_gastos(rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT g.idGasto, g.descripcion, g.monto, g.fecha, m.nombre AS cuenta, m.num_cuenta
+            FROM GASTO g
+            JOIN METODO_DE_PAGO m ON g.idMetodo_de_pago = m.idMetodo_de_pago
+            ORDER BY g.fecha DESC
+        """)
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener gastos: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def insertar_gasto(id_metodo_pago, descripcion, monto, rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        
+        # 1. Restar del saldo de la cuenta
+        cursor.execute(
+            "UPDATE METODO_DE_PAGO SET saldo = saldo - %s WHERE idMetodo_de_pago = %s",
+            (monto, id_metodo_pago)
+        )
+        
+        # 2. Insertar el registro del gasto
+        cursor.execute(
+            "INSERT INTO GASTO (idMetodo_de_pago, descripcion, monto) VALUES (%s, %s, %s)",
+            (id_metodo_pago, descripcion, monto)
+        )
+        
+        conexion.commit()
+    except Error as e:
+        if conexion:
+            conexion.rollback()
+        if e.errno == 3819 or "CONSTRAINT" in str(e).upper():
+            raise Exception("Saldo insuficiente en la cuenta para registrar este gasto.")
+        raise Exception(f"Error al registrar gasto: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def obtener_cuentas_por_pagar(rol):
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        consulta = """
+            SELECT 
+                c.idCompra, 
+                c.fechacompra, 
+                p.nombre AS proveedor,
+                COALESCE(SUM(dc.cantidad * prod.precio_compra), 0) AS total_productos,
+                COALESCE(e.valor, 0) AS total_envio,
+                (COALESCE(SUM(dc.cantidad * prod.precio_compra), 0) + COALESCE(e.valor, 0)) AS total_compra,
+                CASE WHEN e.idEnvio IS NULL THEN 'Pendiente Envío' ELSE 'Envío Registrado' END AS estado_envio
+            FROM COMPRA c
+            JOIN PROVEEDOR p ON c.idProveedor = p.idProveedor
+            LEFT JOIN DETALLE_COMPRA dc ON c.idCompra = dc.idCompra
+            LEFT JOIN PRODUCTO prod ON dc.idProducto = prod.idProducto
+            LEFT JOIN ENVIO e ON c.idCompra = e.idCompra
+            GROUP BY c.idCompra, c.fechacompra, p.nombre, e.valor, e.idEnvio
+            ORDER BY c.fechacompra DESC
+        """
+        cursor.execute(consulta)
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener cuentas por pagar: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
 

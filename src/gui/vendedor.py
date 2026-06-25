@@ -59,6 +59,7 @@ class VendedorWindow(ctk.CTkToplevel):
         nav_items = ["Productos", "Ventas", "Cuentas", "Clientes", "Proveedores", "Envíos"]
         if self.rol == 1:
             nav_items.append("Empleados")
+            nav_items.append("Balance")
         
         for i, item in enumerate(nav_items, start=3):
             btn = ctk.CTkButton(
@@ -126,6 +127,8 @@ class VendedorWindow(ctk.CTkToplevel):
                 self.setup_envios_tab(frame)
             elif item == "Empleados":
                 self.setup_empleados_tab(frame)
+            elif item == "Balance":
+                self.setup_balance_tab(frame)
 
         # Seleccionar la pestaña por defecto
         self.current_frame = None
@@ -785,6 +788,13 @@ class VendedorWindow(ctk.CTkToplevel):
             width=110, command=self._cargar_empleados_data
         ).pack(side="right")
 
+        ctk.CTkButton(
+            top_bar, text="+ Registrar Empleado",
+            font=("Arial", 13, "bold"),
+            fg_color="#1DB954", hover_color="#179643", text_color="#000000",
+            width=160, command=self._abrir_registrar_empleado
+        ).pack(side="right", padx=(0, 10))
+
         self.scroll_empleados = ctk.CTkScrollableFrame(
             parent, fg_color="#0a0a0a", corner_radius=10
         )
@@ -898,6 +908,14 @@ class VendedorWindow(ctk.CTkToplevel):
                     self._toggle_ventas(iid, vf, btn)
             )
             btn_ventas.pack(side="left", padx=(0, 6))
+
+            btn_editar = ctk.CTkButton(
+                acc, text="✏ Editar",
+                font=("Arial", 12), width=75, height=28,
+                fg_color="#1e1e1e", hover_color="#2b2b2b", text_color="#ffffff",
+                command=lambda e=emp: self._abrir_editar_empleado(e)
+            )
+            btn_editar.pack(side="left", padx=(0, 6))
 
             btn_pagar = ctk.CTkButton(
                 acc,
@@ -1110,3 +1128,317 @@ class VendedorWindow(ctk.CTkToplevel):
             modal.after(1400, self._cargar_empleados_data)
         except Exception as e:
             lbl_estado.configure(text=f"Error: {e}", text_color="#ff4d4d")
+
+    def _abrir_registrar_empleado(self):
+        from gui.nuevo_empleado import NuevoEmpleadoWindow
+        win = NuevoEmpleadoWindow(self)
+        win.focus()
+
+    def _abrir_editar_empleado(self, emp):
+        from gui.nuevo_empleado import NuevoEmpleadoWindow
+        win = NuevoEmpleadoWindow(self, empleado_datos=emp)
+        win.focus()
+
+    def cargar_lista_empleados(self):
+        self._cargar_empleados_data()
+
+    # =========================================================================
+    # MÓDULO EXCLUSIVO GERENTE — BALANCE & GASTOS & CUENTAS POR PAGAR
+    # =========================================================================
+
+    def setup_balance_tab(self, parent):
+        """Tab de Balance para el Gerente: Cuentas por Pagar, Estadísticas (Placeholder), Gastos."""
+        # Usar un Tabview para las 3 secciones
+        self.balance_tabview = ctk.CTkTabview(
+            parent,
+            fg_color="#121212",
+            segmented_button_fg_color="#0a0a0a",
+            segmented_button_selected_color="#1DB954",
+            segmented_button_selected_hover_color="#179643",
+            segmented_button_unselected_color="#1a1a1a",
+            segmented_button_unselected_hover_color="#2b2b2b",
+            text_color="#ffffff"
+        )
+        self.balance_tabview.pack(fill="both", expand=True, padx=40, pady=(0, 20))
+        
+        tab_cuentas = self.balance_tabview.add("Cuentas por Pagar")
+        tab_stats = self.balance_tabview.add("Estadísticas de Productos")
+        tab_gastos = self.balance_tabview.add("Gastos")
+        
+        # 1. Setup Cuentas por Pagar
+        self.setup_balance_cuentas(tab_cuentas)
+        
+        # 2. Setup Estadísticas (Placeholder)
+        self.setup_balance_stats(tab_stats)
+        
+        # 3. Setup Gastos
+        self.setup_balance_gastos(tab_gastos)
+
+    # ------------------ BALANCE: CUENTAS POR PAGAR ------------------
+    def setup_balance_cuentas(self, parent):
+        top_bar = ctk.CTkFrame(parent, fg_color="transparent")
+        top_bar.pack(fill="x", pady=(10, 15))
+        
+        ctk.CTkLabel(
+            top_bar, text="Cuentas por Pagar a Proveedores",
+            font=("Arial", 16, "bold"), text_color="#aaaaaa"
+        ).pack(side="left")
+        
+        ctk.CTkButton(
+            top_bar, text="↻ Actualizar",
+            font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", hover_color="#333333", text_color="#1DB954",
+            width=100, command=self.actualizar_balance_cuentas
+        ).pack(side="right")
+        
+        self.scroll_cuentas_pagar = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
+        self.scroll_cuentas_pagar.pack(fill="both", expand=True, pady=(0, 10))
+        
+        self.actualizar_balance_cuentas()
+
+    def actualizar_balance_cuentas(self):
+        for w in self.scroll_cuentas_pagar.winfo_children():
+            w.destroy()
+            
+        try:
+            from database.connection import obtener_cuentas_por_pagar
+            cuentas = obtener_cuentas_por_pagar(self.rol)
+        except Exception as e:
+            cuentas = []
+            print(f"Error al obtener cuentas por pagar: {e}")
+            
+        if not cuentas:
+            ctk.CTkLabel(self.scroll_cuentas_pagar, text="No hay deudas o compras registradas.", text_color="#888888").pack(pady=30)
+            return
+            
+        # Encabezados
+        hdr = ctk.CTkFrame(self.scroll_cuentas_pagar, fg_color="#1e1e1e", corner_radius=5)
+        hdr.pack(fill="x", pady=(0, 6))
+        pesos = [1, 2, 2, 1, 1]
+        cols = ["Compra ID", "Proveedor", "Fecha Compra", "Total Compra", "Estado Envío"]
+        for i, (col, w) in enumerate(zip(cols, pesos)):
+            hdr.grid_columnconfigure(i, weight=w)
+            ctk.CTkLabel(hdr, text=col, font=("Arial", 12, "bold"), text_color="#1DB954").grid(row=0, column=i, padx=10, pady=8, sticky="w")
+            
+        for idx, c in enumerate(cuentas):
+            bg = "#161616" if idx % 2 == 0 else "#0d0d0d"
+            row = ctk.CTkFrame(self.scroll_cuentas_pagar, fg_color=bg, corner_radius=5)
+            row.pack(fill="x", pady=2)
+            
+            for i, w in enumerate(pesos):
+                row.grid_columnconfigure(i, weight=w)
+                
+            fecha = c.get('fechacompra', '')
+            if hasattr(fecha, 'strftime'):
+                fecha = fecha.strftime('%d/%m/%Y %H:%M')
+                
+            total = float(c.get('total_compra', 0) or 0)
+            
+            ctk.CTkLabel(row, text=f"#{c['idCompra']}", font=("Arial", 13, "bold"), text_color="#ffffff").grid(row=0, column=0, padx=10, pady=8, sticky="w")
+            ctk.CTkLabel(row, text=c['proveedor'], font=("Arial", 13), text_color="#ffffff").grid(row=0, column=1, padx=10, pady=8, sticky="w")
+            ctk.CTkLabel(row, text=str(fecha), font=("Arial", 13), text_color="#cccccc").grid(row=0, column=2, padx=10, pady=8, sticky="w")
+            ctk.CTkLabel(row, text=f"${total:,.2f}", font=("Arial", 13, "bold"), text_color="#1DB954").grid(row=0, column=3, padx=10, pady=8, sticky="w")
+            
+            est = c['estado_envio']
+            est_color = "#1DB954" if est == "Envío Registrado" else "#FFD700"
+            ctk.CTkLabel(row, text=est, font=("Arial", 13), text_color=est_color).grid(row=0, column=4, padx=10, pady=8, sticky="w")
+
+    # ------------------ BALANCE: ESTADÍSTICAS ------------------
+    def setup_balance_stats(self, parent):
+        info_frame = ctk.CTkFrame(parent, fg_color="#0a0a0a", corner_radius=15)
+        info_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        lbl_title = ctk.CTkLabel(
+            info_frame, 
+            text="Estadísticas de Productos", 
+            font=("Arial", 22, "bold"), 
+            text_color="#1DB954"
+        )
+        lbl_title.pack(pady=(40, 10))
+        
+        lbl_desc = ctk.CTkLabel(
+            info_frame, 
+            text="Esta sección está planificada para mostrar análisis avanzados de ventas, rotación de inventarios y rendimientos.\n¡Próximamente disponible!", 
+            font=("Arial", 14), 
+            text_color="#888888",
+            justify="center"
+        )
+        lbl_desc.pack(pady=10)
+
+    # ------------------ BALANCE: GASTOS ------------------
+    def setup_balance_gastos(self, parent):
+        # Layout: Columna Izquierda (Formulario para registrar gasto), Columna Derecha (Historial de gastos)
+        parent.grid_columnconfigure(0, weight=2)
+        parent.grid_columnconfigure(1, weight=3)
+        parent.grid_rowconfigure(0, weight=1)
+        
+        # Columna Izquierda: Formulario
+        form_frame = ctk.CTkFrame(parent, fg_color="#0a0a0a", corner_radius=10)
+        form_frame.grid(row=0, column=0, padx=(10, 10), pady=10, sticky="nsew")
+        
+        ctk.CTkLabel(form_frame, text="Registrar Nuevo Gasto", font=("Arial", 16, "bold"), text_color="#1DB954").pack(pady=(15, 15))
+        
+        # Descripción
+        ctk.CTkLabel(form_frame, text="Descripción del Gasto *", font=("Arial", 12, "bold"), text_color="#aaaaaa").pack(anchor="w", padx=20, pady=(5, 2))
+        self.entry_gasto_desc = ctk.CTkEntry(
+            form_frame, placeholder_text="Ej: Pago de servicios públicos",
+            height=38, corner_radius=8, fg_color="#1e1e1e", border_color="#2a2a2a", text_color="#ffffff"
+        )
+        self.entry_gasto_desc.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Monto
+        ctk.CTkLabel(form_frame, text="Monto ($) *", font=("Arial", 12, "bold"), text_color="#aaaaaa").pack(anchor="w", padx=20, pady=(5, 2))
+        self.entry_gasto_monto = ctk.CTkEntry(
+            form_frame, placeholder_text="Ej: 450.00",
+            height=38, corner_radius=8, fg_color="#1e1e1e", border_color="#2a2a2a", text_color="#ffffff"
+        )
+        self.entry_gasto_monto.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Cuenta
+        ctk.CTkLabel(form_frame, text="Cuenta a debitar *", font=("Arial", 12, "bold"), text_color="#aaaaaa").pack(anchor="w", padx=20, pady=(5, 2))
+        
+        try:
+            from database.connection import obtener_saldos_cuentas
+            cuentas = obtener_saldos_cuentas(self.rol)
+            self._cuentas_gastos = {f"{c['tipo_cuenta']} ({c['num_cuenta']})": c['idMetodo_de_pago'] for c in cuentas}
+            opciones = ["Seleccione cuenta..."] + list(self._cuentas_gastos.keys())
+        except Exception:
+            opciones = ["Seleccione cuenta..."]
+            self._cuentas_gastos = {}
+            
+        self.combo_gasto_cuenta = ctk.CTkComboBox(
+            form_frame, values=opciones, height=38, corner_radius=8,
+            fg_color="#1e1e1e", border_color="#2a2a2a", text_color="#ffffff"
+        )
+        self.combo_gasto_cuenta.pack(fill="x", padx=20, pady=(0, 15))
+        self.combo_gasto_cuenta.set("Seleccione cuenta...")
+        
+        # Estado label
+        self.lbl_gasto_status = ctk.CTkLabel(form_frame, text="", font=("Arial", 12), text_color="#ff4d4d", wraplength=220)
+        self.lbl_gasto_status.pack(pady=5)
+        
+        # Guardar
+        ctk.CTkButton(
+            form_frame, text="Guardar Gasto",
+            font=("Arial", 13, "bold"), fg_color="#1DB954", hover_color="#179643", text_color="#000000",
+            height=40, command=self.guardar_gasto
+        ).pack(fill="x", padx=20, pady=(5, 20))
+        
+        # Columna Derecha: Historial
+        hist_frame = ctk.CTkFrame(parent, fg_color="#0a0a0a", corner_radius=10)
+        hist_frame.grid(row=0, column=1, padx=(10, 10), pady=10, sticky="nsew")
+        
+        top_hist = ctk.CTkFrame(hist_frame, fg_color="transparent")
+        top_hist.pack(fill="x", padx=15, pady=(15, 10))
+        
+        ctk.CTkLabel(top_hist, text="Historial de Gastos", font=("Arial", 16, "bold"), text_color="#aaaaaa").pack(side="left")
+        
+        ctk.CTkButton(
+            top_hist, text="↻", font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", hover_color="#333333", text_color="#1DB954",
+            width=35, height=30, command=self.actualizar_gastos_historial
+        ).pack(side="right")
+        
+        self.scroll_gastos = ctk.CTkScrollableFrame(hist_frame, fg_color="transparent")
+        self.scroll_gastos.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        
+        self.actualizar_gastos_historial()
+
+    def guardar_gasto(self):
+        self.lbl_gasto_status.configure(text="", text_color="#ff4d4d")
+        desc = self.entry_gasto_desc.get().strip()
+        monto_str = self.entry_gasto_monto.get().strip()
+        cuenta_sel = self.combo_gasto_cuenta.get()
+        
+        if not desc or not monto_str or cuenta_sel == "Seleccione cuenta...":
+            self.lbl_gasto_status.configure(text="Por favor complete todos los campos.")
+            return
+            
+        try:
+            monto = float(monto_str)
+            if monto <= 0:
+                raise ValueError()
+        except ValueError:
+            self.lbl_gasto_status.configure(text="El monto debe ser un número positivo.")
+            return
+            
+        id_metodo = self._cuentas_gastos.get(cuenta_sel)
+        if not id_metodo:
+            self.lbl_gasto_status.configure(text="Cuenta seleccionada inválida.")
+            return
+            
+        try:
+            from database.connection import insertar_gasto
+            insertar_gasto(id_metodo_pago=id_metodo, descripcion=desc, monto=monto, rol=self.rol)
+            
+            self.lbl_gasto_status.configure(text="¡Gasto registrado con éxito!", text_color="#1DB954")
+            self.entry_gasto_desc.delete(0, 'end')
+            self.entry_gasto_monto.delete(0, 'end')
+            self.combo_gasto_cuenta.set("Seleccione cuenta...")
+            
+            # Recargar historial
+            self.actualizar_gastos_historial()
+            
+            # Recargar el combo local de cuentas del formulario para actualizar saldo mostrado
+            self.recargar_combo_cuentas_gasto()
+            
+        except Exception as e:
+            self.lbl_gasto_status.configure(text=str(e), text_color="#ff4d4d")
+
+    def recargar_combo_cuentas_gasto(self):
+        try:
+            from database.connection import obtener_saldos_cuentas
+            cuentas = obtener_saldos_cuentas(self.rol)
+            self._cuentas_gastos = {f"{c['tipo_cuenta']} ({c['num_cuenta']})": c['idMetodo_de_pago'] for c in cuentas}
+            opciones = ["Seleccione cuenta..."] + list(self._cuentas_gastos.keys())
+            self.combo_gasto_cuenta.configure(values=opciones)
+        except Exception:
+            pass
+
+    def actualizar_gastos_historial(self):
+        for w in self.scroll_gastos.winfo_children():
+            w.destroy()
+            
+        try:
+            from database.connection import obtener_gastos
+            gastos = obtener_gastos(self.rol)
+        except Exception as e:
+            gastos = []
+            print(f"Error al obtener gastos: {e}")
+            
+        if not gastos:
+            ctk.CTkLabel(self.scroll_gastos, text="No hay gastos registrados.", text_color="#888888").pack(pady=20)
+            return
+            
+        # Encabezados
+        hdr = ctk.CTkFrame(self.scroll_gastos, fg_color="#1e1e1e", corner_radius=5)
+        hdr.pack(fill="x", pady=(0, 6))
+        pesos = [2, 1, 1, 1]
+        cols = ["Descripción", "Cuenta", "Monto", "Fecha"]
+        for i, (col, w) in enumerate(zip(cols, pesos)):
+            hdr.grid_columnconfigure(i, weight=w)
+            ctk.CTkLabel(hdr, text=col, font=("Arial", 11, "bold"), text_color="#1DB954").grid(row=0, column=i, padx=5, pady=6, sticky="w")
+            
+        for idx, g in enumerate(gastos):
+            bg = "#161616" if idx % 2 == 0 else "#0d0d0d"
+            row = ctk.CTkFrame(self.scroll_gastos, fg_color=bg, corner_radius=5)
+            row.pack(fill="x", pady=2)
+            
+            for i, w in enumerate(pesos):
+                row.grid_columnconfigure(i, weight=w)
+                
+            fecha = g.get('fecha', '')
+            if hasattr(fecha, 'strftime'):
+                fecha = fecha.strftime('%d/%m/%Y')
+                
+            monto = float(g.get('monto', 0) or 0)
+            
+            # Truncar descripción larga si es necesario
+            desc = g['descripcion']
+            if len(desc) > 20:
+                desc = desc[:17] + "..."
+                
+            ctk.CTkLabel(row, text=desc, font=("Arial", 12), text_color="#ffffff").grid(row=0, column=0, padx=5, pady=6, sticky="w")
+            ctk.CTkLabel(row, text=g['cuenta'], font=("Arial", 11), text_color="#cccccc").grid(row=0, column=1, padx=5, pady=6, sticky="w")
+            ctk.CTkLabel(row, text=f"${monto:,.2f}", font=("Arial", 12, "bold"), text_color="#ff4d4d").grid(row=0, column=2, padx=5, pady=6, sticky="w")
+            ctk.CTkLabel(row, text=str(fecha), font=("Arial", 11), text_color="#888888").grid(row=0, column=3, padx=5, pady=6, sticky="w")
