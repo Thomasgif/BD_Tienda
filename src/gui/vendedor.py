@@ -150,6 +150,19 @@ class VendedorWindow(ctk.CTkToplevel):
         self.frames[name].grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.current_frame = name
 
+        # Actualizar dinámicamente los datos de la pestaña activa
+        if name == "Cuentas":
+            self.actualizar_cuentas_tab()
+        elif name == "Productos":
+            self.actualizar_productos_tab()
+        elif name == "Clientes":
+            self.actualizar_clientes_tab()
+        elif name == "Empleados":
+            self.actualizar_empleados_tab()
+        elif name == "Envíos":
+            self.actualizar_lista_envios()
+
+
     def setup_productos_tab(self, parent):
         top_bar = ctk.CTkFrame(parent, fg_color="transparent")
         top_bar.pack(fill="x", padx=40, pady=(0, 20))
@@ -330,21 +343,57 @@ class VendedorWindow(ctk.CTkToplevel):
         self.actualizar_combobox_pagos()
 
     def setup_cuentas_tab(self, parent):
-        # Título de la tabla/lista
-        lbl_lista = ctk.CTkLabel(parent, text="Estado de Cuentas (Solo Lectura)", font=("Arial", 18, "bold"), text_color="#aaaaaa")
-        lbl_lista.pack(anchor="w", padx=40, pady=(0, 20))
+        # Frame superior para título y botón de actualización
+        top_bar = ctk.CTkFrame(parent, fg_color="transparent")
+        top_bar.pack(fill="x", padx=40, pady=(0, 20))
+        
+        lbl_lista = ctk.CTkLabel(top_bar, text="Estado de Cuentas (Solo Lectura)", font=("Arial", 18, "bold"), text_color="#aaaaaa")
+        lbl_lista.pack(side="left")
+
+        # Botón para actualizar manualmente
+        btn_actualizar = ctk.CTkButton(
+            top_bar, 
+            text="↻ Actualizar", 
+            font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", 
+            hover_color="#333333", 
+            text_color="#1DB954",
+            width=100,
+            command=self.actualizar_cuentas_tab
+        )
+        btn_actualizar.pack(side="right")
 
         # Frame escroleable para la lista de cuentas
-        scroll_frame = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
-        scroll_frame.pack(fill="both", expand=True, padx=40, pady=(0, 20))
+        self.scroll_cuentas = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
+        self.scroll_cuentas.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
+        # Cargar los datos
+        self.actualizar_cuentas_tab()
+
+    def actualizar_cuentas_tab(self):
+        if not hasattr(self, 'scroll_cuentas'):
+            return
+            
+        import os
+        os.makedirs("scratch", exist_ok=True)
+        with open("scratch/gui_debug.log", "a", encoding="utf-8") as f:
+            f.write("--- actualizar_cuentas_tab START ---\n")
+            
+        for widget in self.scroll_cuentas.winfo_children():
+            widget.destroy()
+            
         try:
+            from database.connection import obtener_saldos_cuentas
             cuentas = obtener_saldos_cuentas(self.rol)
+            
+            with open("scratch/gui_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"Fetched accounts from DB: {cuentas}\n")
+                
             if not cuentas:
-                ctk.CTkLabel(scroll_frame, text="No hay cuentas registradas aún.", text_color="#888888").pack(pady=20)
+                ctk.CTkLabel(self.scroll_cuentas, text="No hay cuentas registradas aún.", text_color="#888888").pack(pady=20)
             else:
                 # Encabezados
-                headers_frame = ctk.CTkFrame(scroll_frame, fg_color="#1e1e1e", corner_radius=5)
+                headers_frame = ctk.CTkFrame(self.scroll_cuentas, fg_color="#1e1e1e", corner_radius=5)
                 headers_frame.pack(fill="x", pady=(0, 10))
                 
                 # Configurar columnas
@@ -358,7 +407,7 @@ class VendedorWindow(ctk.CTkToplevel):
                 
                 # Filas de cuentas
                 for idx, cuenta in enumerate(cuentas):
-                    row_frame = ctk.CTkFrame(scroll_frame, fg_color="#121212" if idx % 2 == 0 else "#0a0a0a", corner_radius=0)
+                    row_frame = ctk.CTkFrame(self.scroll_cuentas, fg_color="#121212" if idx % 2 == 0 else "#0a0a0a", corner_radius=0)
                     row_frame.pack(fill="x")
                     
                     row_frame.grid_columnconfigure(0, weight=1)
@@ -372,7 +421,36 @@ class VendedorWindow(ctk.CTkToplevel):
                     ctk.CTkLabel(row_frame, text=f"${saldo:,.2f}", text_color="#1DB954", font=("Arial", 14, "bold")).grid(row=0, column=2, padx=10, pady=8, sticky="w")
 
         except Exception as e:
-            ctk.CTkLabel(scroll_frame, text=f"Error cargando cuentas:\n{e}", text_color="#ff4d4d").pack(pady=20)
+            with open("scratch/gui_debug.log", "a", encoding="utf-8") as f:
+                f.write(f"Error: {e}\n")
+            ctk.CTkLabel(self.scroll_cuentas, text=f"Error cargando cuentas:\n{e}", text_color="#ff4d4d").pack(pady=20)
+            
+        with open("scratch/gui_debug.log", "a", encoding="utf-8") as f:
+            f.write("--- actualizar_cuentas_tab END ---\n\n")
+
+
+    def actualizar_productos_tab(self):
+        if not hasattr(self, 'scroll_productos'):
+            return
+        try:
+            self.todos_productos = obtener_productos(self.rol)
+            self.filtrar_productos()
+        except Exception as e:
+            print(f"Error al actualizar productos: {e}")
+
+    def actualizar_clientes_tab(self):
+        if not hasattr(self, 'scroll_clientes'):
+            return
+        try:
+            self.todos_clientes = obtener_clientes(self.rol)
+            self.filtrar_clientes()
+        except Exception as e:
+            print(f"Error al actualizar clientes: {e}")
+
+    def actualizar_empleados_tab(self):
+        if hasattr(self, '_cargar_empleados_data'):
+            self._cargar_empleados_data()
+
 
     def setup_clientes_tab(self, parent):
         # Frame superior para botones y búsqueda
@@ -1126,8 +1204,11 @@ class VendedorWindow(ctk.CTkToplevel):
             modal.after(1200, modal.destroy)
             # Refrescar tabla después de cerrar el modal
             modal.after(1400, self._cargar_empleados_data)
+            # Actualizar balances en la pestaña Cuentas si ya está cargada
+            self.actualizar_cuentas_tab()
         except Exception as e:
             lbl_estado.configure(text=f"Error: {e}", text_color="#ff4d4d")
+
 
     def _abrir_registrar_empleado(self):
         from gui.nuevo_empleado import NuevoEmpleadoWindow
