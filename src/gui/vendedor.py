@@ -8,7 +8,8 @@ class VendedorWindow(ctk.CTkToplevel):
         # Almacenar el rol para usarlo en todas las operaciones de BD de esta sesión
         self.rol = rol           # 1 = gerente, 0 = empleado común
         self.id_empleado = id_empleado  # ID del empleado autenticado (para registrar compras, etc.)
-        
+        self.clientes_expandidos = set()
+
         self.title("Sistema de Ventas")
         self.geometry("1000x700")
         self.resizable(True, True)
@@ -482,6 +483,8 @@ class VendedorWindow(ctk.CTkToplevel):
         self.scroll_clientes = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
         self.scroll_clientes.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
+        self.clientes_expandidos = set()
+
         try:
             self.todos_clientes = obtener_clientes(self.rol)
             self.render_clientes(self.todos_clientes)
@@ -513,7 +516,7 @@ class VendedorWindow(ctk.CTkToplevel):
         headers_frame.grid_columnconfigure(1, weight=2) # Nombre
         headers_frame.grid_columnconfigure(2, weight=1) # Telefono
         headers_frame.grid_columnconfigure(3, weight=2) # Correo
-        headers_frame.grid_columnconfigure(4, weight=1) # Acciones
+        headers_frame.grid_columnconfigure(4, weight=2) # Acciones
         
         ctk.CTkLabel(headers_frame, text="Documento", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=0, padx=10, pady=10, sticky="w")
         ctk.CTkLabel(headers_frame, text="Nombre y Apellido", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=1, padx=10, pady=10, sticky="w")
@@ -530,7 +533,7 @@ class VendedorWindow(ctk.CTkToplevel):
             row_frame.grid_columnconfigure(1, weight=2)
             row_frame.grid_columnconfigure(2, weight=1)
             row_frame.grid_columnconfigure(3, weight=2)
-            row_frame.grid_columnconfigure(4, weight=1)
+            row_frame.grid_columnconfigure(4, weight=2)
             
             ctk.CTkLabel(row_frame, text=cliente['documento'], text_color="#cccccc").grid(row=0, column=0, padx=10, pady=8, sticky="w")
             nombre_completo = f"{cliente['nombre']} {cliente['apellidos']}"
@@ -538,9 +541,12 @@ class VendedorWindow(ctk.CTkToplevel):
             ctk.CTkLabel(row_frame, text=cliente['telefono'] or "N/A", text_color="#cccccc").grid(row=0, column=2, padx=10, pady=8, sticky="w")
             ctk.CTkLabel(row_frame, text=cliente['correo'] or "N/A", text_color="#cccccc").grid(row=0, column=3, padx=10, pady=8, sticky="w")
             
+            actions_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+            actions_frame.grid(row=0, column=4, padx=10, pady=6, sticky="w")
+
             # Botón de Editar
             btn_editar = ctk.CTkButton(
-                row_frame, 
+                actions_frame, 
                 text="Editar", 
                 width=60, 
                 height=28, 
@@ -550,8 +556,67 @@ class VendedorWindow(ctk.CTkToplevel):
                 text_color="#ffffff",
                 command=lambda doc=cliente['documento']: self.editar_cliente(doc)
             )
-            btn_editar.grid(row=0, column=4, padx=10, pady=8, sticky="w")
+            btn_editar.pack(side="left", padx=4)
 
+            # Frame expandible de cuentas por cobrar
+            deuda_frame= ctk.CTkFrame(row_frame, fg_color="#0b0b0b", corner_radius=8)
+            id_cliente = cliente['idCliente']
+           
+            btn_ventas=ctk.CTkButton(
+                actions_frame,
+                text="▶ Cuentas pendientes",
+                font=("Arial", 12), width=90, height=28,
+                fg_color="#1e2a1e", hover_color="#2d472d", text_color="#1DB954"
+            )
+            btn_ventas.configure(
+                command=lambda idcli=id_cliente, df=deuda_frame, btn=btn_ventas:
+                    self._toggle_deudas(idcli, df, btn)
+            )
+            btn_ventas.pack(side="left", padx=2)
+
+            if id_cliente in self.clientes_expandidos:
+                self._cargar_deudas_cliente(deuda_frame, id_cliente)
+                deuda_frame.grid(row=1, columnspan=5, padx=10, pady=(0, 10), sticky="ew")
+                btn_ventas.configure(text="▼ Ocultar cuentas")
+
+    def _toggle_deudas(self,idcli,df,btn):
+        if idcli in self.clientes_expandidos:
+            self.clientes_expandidos.discard(idcli)
+            df.grid_forget()
+            btn.configure(text="▶ Cuentas pendientes")
+        else:
+            self.clientes_expandidos.add(idcli)
+            self._cargar_deudas_cliente(df,idcli)
+            df.grid(row=1, columnspan=5, padx=10, pady=(0,10), sticky="ew")
+            btn.configure(text="▼ Ocultar cuentas")
+
+    def _cargar_deudas_cliente(self,df,idcli):
+        for w in df.winfo_children():
+            w.destroy()
+        try:
+            from database.connection import obtener_deudas_cliente, pago_total_venta
+            deudas = obtener_deudas_cliente(idcli, self.rol)
+        except Exception as e:
+            ctk.CTkLabel(df, text=f"Error al cargar deudas: {str(e)}", text_color="red").pack(pady=10)
+            return
+        
+        ctk.CTkLabel(
+            df,
+            text="Deudas pendientes del cliente: ", 
+            font=("Arial", 13, "bold"),text_color="#cccccc"
+            ).pack(anchor="w", padx=15, pady=(10,4))
+
+        if not deudas:
+            ctk.CTkLabel(
+                df,
+                text="No se encontraron deudas.",
+                text_color="#888888", font=("Arial", 12)).pack(pady=(0,10), anchor="w", padx=15)
+            return
+
+        for d in deudas:
+            txt_deuda = f"Id Venta: {d['idVenta']}  |  Fecha: {d['fecha_venta']}  |  Deuda: {float(d['valor_total'])-pago_total_venta(d['idVenta'], self.rol)}"
+            ctk.CTkLabel(df, text=txt_deuda, text_color="#cccccc", font=("Arial", 12)).pack(pady=4, anchor="w", padx=20)   
+        
     # =========================================================================
     # PESTAÑA PROVEEDORES
     # =========================================================================
