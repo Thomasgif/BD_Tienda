@@ -551,111 +551,269 @@ class VendedorWindow(ctk.CTkToplevel):
             )
             btn_editar.grid(row=0, column=4, padx=10, pady=8, sticky="w")
 
+    # =========================================================================
+    # PESTAÑA PROVEEDORES
+    # =========================================================================
+
     def setup_proveedores_tab(self, parent):
+        """Configura la pestaña de proveedores con control de acceso por rol."""
+
+        # ── Barra superior ────────────────────────────────────────────────────
+        top_bar = ctk.CTkFrame(parent, fg_color="transparent")
+        top_bar.pack(fill="x", padx=40, pady=(0, 16))
+
+        ctk.CTkLabel(
+            top_bar, text="Proveedores",
+            font=("Arial", 18, "bold"), text_color="#aaaaaa",
+        ).pack(side="left")
+
+        # Botón Actualizar (siempre visible)
+        ctk.CTkButton(
+            top_bar, text="↻ Actualizar",
+            font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", hover_color="#333333",
+            text_color="#1DB954", width=110,
+            command=self.actualizar_lista_proveedores,
+        ).pack(side="right")
+
+        # Botón Nuevo Proveedor — SOLO GERENTE
+        if self.rol == 1:
+            ctk.CTkButton(
+                top_bar, text="+ Nuevo Proveedor",
+                font=("Arial", 13, "bold"),
+                fg_color="#1DB954", hover_color="#179643",
+                text_color="#000000", width=155,
+                command=self.abrir_nuevo_proveedor,
+            ).pack(side="right", padx=(0, 10))
+
+        # ── Layout de 2 columnas ──────────────────────────────────────────────
         main_container = ctk.CTkFrame(parent, fg_color="transparent")
         main_container.pack(fill="both", expand=True, padx=40, pady=(0, 20))
-        
-        # Izquierda: Lista de Proveedores
-        left_frame = ctk.CTkFrame(main_container, fg_color="#0a0a0a", corner_radius=15)
-        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
-        
-        # Derecha: Detalles del Proveedor y Pedidos
+
+        # Columna izquierda — Lista
+        left_frame = ctk.CTkFrame(main_container, fg_color="#0a0a0a", corner_radius=15, width=280)
+        left_frame.pack(side="left", fill="y", padx=(0, 10))
+        left_frame.pack_propagate(False)
+
+        ctk.CTkLabel(
+            left_frame, text="Lista de Proveedores",
+            font=("Arial", 14, "bold"), text_color="#666666",
+        ).pack(padx=16, pady=(14, 8), anchor="w")
+
+        self.scroll_proveedores = ctk.CTkScrollableFrame(
+            left_frame, fg_color="#0a0a0a", corner_radius=0,
+        )
+        self.scroll_proveedores.pack(fill="both", expand=True, padx=6, pady=(0, 10))
+
+        # Columna derecha — Detalle
         self.right_frame_prov = ctk.CTkFrame(main_container, fg_color="#0a0a0a", corner_radius=15)
         self.right_frame_prov.pack(side="right", fill="both", expand=True, padx=(10, 0))
-        
-        # --- IZQUIERDA: Proveedores ---
-        lbl_titulo = ctk.CTkLabel(left_frame, text="Lista de Proveedores", font=("Arial", 20, "bold"), text_color="#1DB954")
-        lbl_titulo.pack(padx=20, pady=(20, 15), anchor="w")
-        
-        self.scroll_proveedores = ctk.CTkScrollableFrame(left_frame, fg_color="#121212", corner_radius=10)
-        self.scroll_proveedores.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        # Cargar proveedores
+
+        # Placeholder inicial derecho
+        ctk.CTkLabel(
+            self.right_frame_prov,
+            text="Selecciona un proveedor para ver\nsus compras pendientes de envío.",
+            font=("Arial", 15), text_color="#444444",
+        ).pack(expand=True)
+
+        # Cargar lista inicial
+        self._proveedores_data = []
+        self.actualizar_lista_proveedores()
+
+    def actualizar_lista_proveedores(self):
+        """Recarga proveedores desde la BD y re-renderiza la lista."""
         try:
-            from database.connection import obtener_proveedores
-            proveedores = obtener_proveedores(self.rol)
-            if not proveedores:
-                ctk.CTkLabel(self.scroll_proveedores, text="No hay proveedores registrados.", text_color="#666666").pack(pady=20)
-            else:
-                for idx, p in enumerate(proveedores):
-                    btn = ctk.CTkButton(
-                        self.scroll_proveedores, 
-                        text=f"{p['nombre']} (NIT: {p.get('nit', 'N/A') or 'N/A'})", 
-                        font=("Arial", 14),
-                        fg_color="#1e1e1e", 
-                        hover_color="#1DB954",
-                        text_color="#ffffff",
-                        anchor="w",
-                        height=40,
-                        command=lambda prov=p: self.mostrar_detalle_proveedor(prov)
-                    )
-                    btn.pack(fill="x", pady=5, padx=5)
+            from database.connection import obtener_proveedores_completos
+            self._proveedores_data = obtener_proveedores_completos(self.rol)
         except Exception as e:
-            ctk.CTkLabel(self.scroll_proveedores, text=f"Error: {e}", text_color="#ff4d4d").pack(pady=20)
-            
-        # --- DERECHA: Placeholder Inicial ---
-        self.lbl_detalle_placeholder = ctk.CTkLabel(self.right_frame_prov, text="Seleccione un proveedor a la izquierda\npara ver detalles y pedidos pendientes.", font=("Arial", 16), text_color="#666666")
-        self.lbl_detalle_placeholder.pack(expand=True)
+            self._proveedores_data = []
+            print(f"Error al cargar proveedores: {e}")
+        self.render_proveedores(self._proveedores_data)
+
+    def render_proveedores(self, proveedores):
+        """Renderiza la lista de proveedores en el panel izquierdo."""
+        for w in self.scroll_proveedores.winfo_children():
+            w.destroy()
+
+        if not proveedores:
+            ctk.CTkLabel(
+                self.scroll_proveedores,
+                text="No hay proveedores registrados.",
+                text_color="#555555",
+            ).pack(pady=20)
+            return
+
+        for idx, p in enumerate(proveedores):
+            bg = "#161616" if idx % 2 == 0 else "#111111"
+            row = ctk.CTkFrame(self.scroll_proveedores, fg_color=bg, corner_radius=8)
+            row.pack(fill="x", pady=3, padx=4)
+            row.grid_columnconfigure(0, weight=1)
+
+            # Botón con nombre del proveedor
+            ctk.CTkButton(
+                row,
+                text=f"  {p['nombre']}  —  NIT: {p.get('nit') or 'N/A'}",
+                font=("Arial", 13),
+                fg_color="transparent",
+                hover_color="#1e2b1e",
+                text_color="#ffffff",
+                anchor="w",
+                height=38,
+                command=lambda prov=p: self.mostrar_detalle_proveedor(prov),
+            ).grid(row=0, column=0, sticky="ew", padx=(4, 0), pady=4)
+
+            # Botón Editar — SOLO GERENTE
+            if self.rol == 1:
+                ctk.CTkButton(
+                    row, text="✏",
+                    width=34, height=34,
+                    font=("Arial", 14),
+                    fg_color="#1e2b1e",
+                    hover_color="#2d472d",
+                    text_color="#1DB954",
+                    command=lambda prov=p: self.editar_proveedor(prov),
+                ).grid(row=0, column=1, padx=(4, 8), pady=4)
+
+    def abrir_nuevo_proveedor(self):
+        """Abre la ventana para registrar un nuevo proveedor (solo Gerente)."""
+        from gui.nuevo_proveedor import NuevoProveedorWindow
+        self.nuevo_prov_win = NuevoProveedorWindow(self)
+
+    def editar_proveedor(self, proveedor):
+        """Abre la ventana de edición para un proveedor existente (solo Gerente)."""
+        from gui.nuevo_proveedor import NuevoProveedorWindow
+        self.nuevo_prov_win = NuevoProveedorWindow(self, proveedor_datos=proveedor)
+
+    def abrir_nueva_compra(self, proveedor):
+        """Abre la ventana para registrar una nueva compra (solo Gerente)."""
+        from gui.nueva_compra import NuevaCompraWindow
+        self.nueva_compra_win = NuevaCompraWindow(self, proveedor=proveedor)
 
     def mostrar_detalle_proveedor(self, proveedor):
-        # Limpiar frame derecho
+        """Renderiza el panel derecho con la info del proveedor y sus
+        compras pendientes (sin envío asignado)."""
+        # Limpiar panel derecho
         for widget in self.right_frame_prov.winfo_children():
             widget.destroy()
-            
-        # Info del proveedor
+
+        # ── Info del proveedor ────────────────────────────────────────────────
         info_frame = ctk.CTkFrame(self.right_frame_prov, fg_color="transparent")
-        info_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
-        ctk.CTkLabel(info_frame, text=proveedor['nombre'], font=("Arial", 24, "bold"), text_color="#ffffff").pack(anchor="w")
-        ctk.CTkLabel(info_frame, text=f"NIT: {proveedor.get('nit', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
-        ctk.CTkLabel(info_frame, text=f"Teléfono: {proveedor.get('telefono', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
-        ctk.CTkLabel(info_frame, text=f"Correo: {proveedor.get('correo', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
-        ctk.CTkLabel(info_frame, text=f"Dirección: {proveedor.get('direccion', 'N/A') or 'N/A'}", font=("Arial", 14), text_color="#aaaaaa").pack(anchor="w")
-        
-        # Separador
-        separador = ctk.CTkFrame(self.right_frame_prov, height=2, fg_color="#333333")
-        separador.pack(fill="x", padx=20, pady=10)
-        
-        # Pedidos Pendientes
-        ctk.CTkLabel(self.right_frame_prov, text="Pedidos / Envíos Pendientes por Pago", font=("Arial", 18, "bold"), text_color="#1DB954").pack(anchor="w", padx=20, pady=(10, 5))
-        
-        scroll_pedidos = ctk.CTkScrollableFrame(self.right_frame_prov, fg_color="#121212", corner_radius=10)
-        scroll_pedidos.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        # Cargar pedidos del proveedor seleccionado
+        info_frame.pack(fill="x", padx=20, pady=(20, 8))
+
+        # Fila título + botón Nueva Compra (gerente)
+        name_row = ctk.CTkFrame(info_frame, fg_color="transparent")
+        name_row.pack(fill="x")
+
+        ctk.CTkLabel(
+            name_row,
+            text=proveedor.get('nombre', ''),
+            font=("Arial", 22, "bold"), text_color="#ffffff",
+        ).pack(side="left", anchor="w")
+
+        if self.rol == 1:
+            ctk.CTkButton(
+                name_row,
+                text="+ Nueva Compra",
+                font=("Arial", 13, "bold"),
+                fg_color="#1DB954", hover_color="#179643",
+                text_color="#000000", height=34,
+                command=lambda: self.abrir_nueva_compra(proveedor),
+            ).pack(side="right")
+
+        for label, key in [
+            ("NIT",       "nit"),
+            ("Teléfono",  "telefono"),
+            ("Correo",    "correo"),
+            ("Dirección", "direccion"),
+        ]:
+            valor = proveedor.get(key) or "N/A"
+            ctk.CTkLabel(
+                info_frame,
+                text=f"{label}: {valor}",
+                font=("Arial", 13), text_color="#888888",
+            ).pack(anchor="w", pady=1)
+
+        # ── Separador ─────────────────────────────────────────────────────────
+        ctk.CTkFrame(self.right_frame_prov, height=1, fg_color="#2a2a2a").pack(fill="x", padx=20, pady=10)
+
+        # ── Compras sin envío ────────────────────────────────────────────────
+        ctk.CTkLabel(
+            self.right_frame_prov,
+            text="Compras Pendientes (sin envío asignado)",
+            font=("Arial", 15, "bold"), text_color="#1DB954",
+        ).pack(anchor="w", padx=20, pady=(0, 8))
+
+        scroll_compras = ctk.CTkScrollableFrame(
+            self.right_frame_prov, fg_color="#080808", corner_radius=10,
+        )
+        scroll_compras.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
         try:
-            from database.connection import obtener_pedidos_proveedor
-            pedidos = obtener_pedidos_proveedor(proveedor['idProveedor'], self.rol)
-            if not pedidos:
-                ctk.CTkLabel(scroll_pedidos, text="Este proveedor no tiene pedidos registrados.", text_color="#666666").pack(pady=20)
+            from database.connection import obtener_compras_sin_envio_por_proveedor
+            compras = obtener_compras_sin_envio_por_proveedor(
+                proveedor['idProveedor'], self.rol
+            )
+
+            if not compras:
+                ctk.CTkLabel(
+                    scroll_compras,
+                    text="Sin compras pendientes para este proveedor.",
+                    text_color="#555555",
+                ).pack(pady=24)
             else:
-                for idx, ped in enumerate(pedidos):
-                    row_frame = ctk.CTkFrame(scroll_pedidos, fg_color="#1e1e1e" if idx % 2 == 0 else "#2a2a2a", corner_radius=8)
-                    row_frame.pack(fill="x", pady=5)
-                    
-                    id_compra = ped.get('idCompra', 'N/A')
-                    fecha_compra = ped.get('fechacompra', 'N/A')
-                    if hasattr(fecha_compra, 'strftime'): fecha_compra = fecha_compra.strftime('%Y-%m-%d')
-                    
-                    id_envio = ped.get('idEnvio')
-                    fecha_envio = ped.get('fecha_envio', 'N/A')
-                    if hasattr(fecha_envio, 'strftime'): fecha_envio = fecha_envio.strftime('%Y-%m-%d')
-                    
-                    valor = float(ped.get('valor', 0))
-                    
-                    lbl_compra = ctk.CTkLabel(row_frame, text=f"Compra #{id_compra} - Fecha: {fecha_compra}", font=("Arial", 14, "bold"), text_color="#ffffff")
-                    lbl_compra.pack(anchor="w", padx=10, pady=(10, 0))
-                    
-                    if id_envio:
-                        detalle_envio = f"Envío Asociado: #{id_envio} | Fecha Est.: {fecha_envio} | Valor a pagar: ${valor:,.2f}"
-                        color_envio = "#cccccc"
-                    else:
-                        detalle_envio = "Sin envío asociado (Aún no facturado/enviado)"
-                        color_envio = "#888888"
-                        
-                    ctk.CTkLabel(row_frame, text=detalle_envio, font=("Arial", 12), text_color=color_envio).pack(anchor="w", padx=10, pady=(2, 10))
+                for idx, c in enumerate(compras):
+                    bg = "#181818" if idx % 2 == 0 else "#111111"
+                    card = ctk.CTkFrame(scroll_compras, fg_color=bg, corner_radius=10)
+                    card.pack(fill="x", pady=5)
+
+                    id_compra = c.get('idCompra', 'N/A')
+                    fecha = c.get('fechacompra', 'N/A')
+                    if hasattr(fecha, 'strftime'):
+                        fecha = fecha.strftime('%Y-%m-%d %H:%M')
+                    total      = float(c.get('total_productos', 0))
+                    unidades   = int(c.get('total_unidades', 0))
+
+                    # Cabecera de la compra
+                    hdr_row = ctk.CTkFrame(card, fg_color="transparent")
+                    hdr_row.pack(fill="x", padx=12, pady=(10, 4))
+
+                    ctk.CTkLabel(
+                        hdr_row,
+                        text=f"Compra #{id_compra}",
+                        font=("Arial", 14, "bold"), text_color="#ffffff",
+                    ).pack(side="left")
+
+                    ctk.CTkLabel(
+                        hdr_row,
+                        text=fecha,
+                        font=("Arial", 12), text_color="#777777",
+                    ).pack(side="right")
+
+                    # Detalle de productos
+                    detalle = c.get('detalle', [])
+                    if detalle:
+                        for prod in detalle:
+                            ctk.CTkLabel(
+                                card,
+                                text=f"  • {prod['nombre']}  ({prod['referencia']})   ×{prod['cantidad']}   ${float(prod.get('subtotal', 0)):,.2f}",
+                                font=("Arial", 12), text_color="#aaaaaa",
+                                anchor="w",
+                            ).pack(fill="x", padx=16, pady=1)
+
+                    # Pie de la compra
+                    ctk.CTkLabel(
+                        card,
+                        text=f"  {unidades} unidades — Total estimado: ${total:,.2f}",
+                        font=("Arial", 13, "bold"), text_color="#1DB954",
+                        anchor="w",
+                    ).pack(fill="x", padx=12, pady=(6, 10))
+
         except Exception as e:
-            ctk.CTkLabel(scroll_pedidos, text=f"Error al cargar pedidos: {e}", text_color="#ff4d4d").pack(pady=20)
+            ctk.CTkLabel(
+                scroll_compras,
+                text=f"Error al cargar compras: {e}",
+                text_color="#ff4d4d",
+            ).pack(pady=20)
 
     def setup_envios_tab(self, parent):
         # Frame superior para botones y búsqueda

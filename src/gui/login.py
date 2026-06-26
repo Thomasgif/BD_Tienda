@@ -136,7 +136,7 @@ class LoginWindow(ctk.CTk):
                 # Abrir la ventana principal pasando el rol para que use el usuario SQL correcto
                 from gui.vendedor import VendedorWindow
                 self.withdraw()  # Oculta la ventana de login
-                self.vendedor_window = VendedorWindow(self, nombre_vendedor=nombre_empleado, rol=rol)
+                self.vendedor_window = VendedorWindow(self, nombre_vendedor=nombre_empleado, rol=rol, id_empleado=empleado['idEmpleado'])
                 # Cerrar toda la aplicación cuando se cierre la ventana de vendedor
                 self.vendedor_window.protocol("WM_DELETE_WINDOW", self.destroy)
             else:

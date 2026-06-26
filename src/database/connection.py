@@ -698,3 +698,229 @@ def obtener_cuentas_por_pagar(rol):
         if conexion is not None and conexion.is_connected(): conexion.close()
 
 
+# ---------------------------------------------------------------------------
+# MÓDULO PROVEEDORES — CRUD Y CONSULTAS
+# ---------------------------------------------------------------------------
+
+def obtener_proveedores_completos(rol):
+    """
+    Obtiene todos los proveedores con todos sus campos (incluyendo contacto)
+    para precargar formularios de edición y mostrar la lista de proveedores.
+
+    Retorna:
+        list[dict]: idProveedor, nombre, nit, telefono, correo, direccion.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT idProveedor, nombre, nit, telefono, correo, direccion
+            FROM PROVEEDOR
+            ORDER BY nombre
+        """)
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener proveedores: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def insertar_proveedor(nombre, nit, telefono, correo, direccion, rol):
+    """
+    Inserta un nuevo proveedor en la base de datos.
+    Solo accesible por el rol Gerente (rol = 1).
+
+    Retorna:
+        int: El idProveedor autogenerado.
+    """
+    nombre    = nombre.strip()
+    nit       = nit.strip()       if nit       and nit.strip()       else None
+    telefono  = telefono.strip()  if telefono  and telefono.strip()  else None
+    correo    = correo.strip()    if correo    and correo.strip()    else None
+    direccion = direccion.strip() if direccion and direccion.strip() else None
+
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        cursor.execute(
+            "INSERT INTO PROVEEDOR (nombre, nit, telefono, correo, direccion) VALUES (%s, %s, %s, %s, %s)",
+            (nombre, nit, telefono, correo, direccion)
+        )
+        conexion.commit()
+        return cursor.lastrowid
+    except Error as e:
+        if e.errno == 1062:
+            raise Exception("El nombre o teléfono ya está registrado para otro proveedor.")
+        raise Exception(f"Error al registrar proveedor: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def actualizar_proveedor(id_proveedor, nombre, nit, telefono, correo, direccion, rol):
+    """
+    Actualiza los datos de un proveedor existente.
+    Solo accesible por el rol Gerente (rol = 1).
+    """
+    nombre    = nombre.strip()
+    nit       = nit.strip()       if nit       and nit.strip()       else None
+    telefono  = telefono.strip()  if telefono  and telefono.strip()  else None
+    correo    = correo.strip()    if correo    and correo.strip()    else None
+    direccion = direccion.strip() if direccion and direccion.strip() else None
+
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        cursor.execute(
+            """UPDATE PROVEEDOR
+               SET nombre = %s, nit = %s, telefono = %s, correo = %s, direccion = %s
+               WHERE idProveedor = %s""",
+            (nombre, nit, telefono, correo, direccion, id_proveedor)
+        )
+        conexion.commit()
+    except Error as e:
+        if e.errno == 1062:
+            raise Exception("El nombre o teléfono ya está registrado para otro proveedor.")
+        raise Exception(f"Error al actualizar proveedor: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def obtener_compras_sin_envio_por_proveedor(id_proveedor, rol):
+    """
+    Obtiene las compras de un proveedor que aún NO tienen un envío asignado.
+    Estas son las compras pendientes de despacho/pago.
+
+    Retorna:
+        list[dict]: idCompra, fechacompra, total_productos, total_unidades,
+                    y 'detalle' (lista de productos: nombre, referencia, cantidad, precio_compra).
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+
+        # Compras sin envío asociado
+        cursor.execute("""
+            SELECT
+                c.idCompra,
+                c.fechacompra,
+                COALESCE(SUM(dc.cantidad * p.precio_compra), 0) AS total_productos,
+                COALESCE(SUM(dc.cantidad), 0)                   AS total_unidades
+            FROM COMPRA c
+            LEFT JOIN DETALLE_COMPRA dc ON c.idCompra  = dc.idCompra
+            LEFT JOIN PRODUCTO p        ON dc.idProducto = p.idProducto
+            LEFT JOIN ENVIO e           ON c.idCompra  = e.idCompra
+            WHERE c.idProveedor = %s
+              AND e.idEnvio IS NULL
+            GROUP BY c.idCompra, c.fechacompra
+            ORDER BY c.fechacompra DESC
+        """, (id_proveedor,))
+        compras = cursor.fetchall()
+
+        # Detalle de productos por cada compra
+        for compra in compras:
+            cursor.execute("""
+                SELECT p.nombre, p.referencia, dc.cantidad,
+                       p.precio_compra,
+                       (dc.cantidad * p.precio_compra) AS subtotal
+                FROM DETALLE_COMPRA dc
+                JOIN PRODUCTO p ON dc.idProducto = p.idProducto
+                WHERE dc.idCompra = %s
+            """, (compra['idCompra'],))
+            compra['detalle'] = cursor.fetchall()
+
+        return compras
+    except Exception as e:
+        raise Exception(f"Error al obtener compras pendientes del proveedor: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def obtener_productos_para_compra(rol):
+    """
+    Obtiene productos con precio de compra para el formulario de nueva compra.
+    Solo accesible por el rol Gerente.
+
+    Retorna:
+        list[dict]: idProducto, nombre, referencia, precio_compra.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT idProducto, nombre, referencia, precio_compra
+            FROM PRODUCTO
+            ORDER BY nombre
+        """)
+        return cursor.fetchall()
+    except Error as e:
+        raise Exception(f"Error al obtener productos para compra: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def insertar_compra(id_proveedor, id_empleado, productos, rol):
+    """
+    Registra una nueva compra y su detalle en una transacción atómica.
+
+    IMPORTANTE: Esta función NO actualiza el inventario (PRODUCTO.bodega).
+    El inventario se actualiza al confirmar el envío (insertar_envio),
+    distribuyendo el costo del envío entre el total de unidades compradas
+    para ajustar el precio_compra de cada producto.
+
+    Parámetros:
+        id_proveedor (int): Proveedor al que se le compra.
+        id_empleado  (int): Gerente que registra la compra.
+        productos (list[dict]): Lista de {'idProducto': int, 'cantidad': int}.
+        rol (int): Debe ser 1 (Gerente).
+
+    Retorna:
+        int: El idCompra autogenerado.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+
+        # 1. Cabecera de la compra
+        cursor.execute(
+            "INSERT INTO COMPRA (idEmpleado, idProveedor) VALUES (%s, %s)",
+            (id_empleado, id_proveedor)
+        )
+        id_compra = cursor.lastrowid
+
+        # 2. Detalle por cada producto
+        for prod in productos:
+            cursor.execute(
+                "INSERT INTO DETALLE_COMPRA (idProducto, idCompra, cantidad) VALUES (%s, %s, %s)",
+                (prod['idProducto'], id_compra, prod['cantidad'])
+            )
+
+        conexion.commit()
+        return id_compra
+    except Error as e:
+        if conexion:
+            conexion.rollback()
+        raise Exception(f"Error al registrar la compra: {e}")
+    except Exception as e:
+        if conexion:
+            conexion.rollback()
+        raise e
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
