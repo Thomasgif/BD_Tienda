@@ -2,11 +2,12 @@ import customtkinter as ctk
 from database.connection import obtener_clientes, obtener_productos, obtener_saldos_cuentas
 
 class VendedorWindow(ctk.CTkToplevel):
-    def __init__(self, master=None, nombre_vendedor="Usuario", rol=0, *args, **kwargs):
+    def __init__(self, master=None, nombre_vendedor="Usuario", rol=0, id_empleado=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         
         # Almacenar el rol para usarlo en todas las operaciones de BD de esta sesión
-        self.rol = rol  # 1 = gerente, 0 = empleado común
+        self.rol = rol           # 1 = gerente, 0 = empleado común
+        self.id_empleado = id_empleado  # ID del empleado autenticado (para registrar compras, etc.)
         
         self.title("Sistema de Ventas")
         self.geometry("1000x700")
