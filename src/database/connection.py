@@ -247,6 +247,47 @@ def actualizar_cliente(id_cliente, nombre, apellidos, documento, rol, telefono=N
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
+def obtener_deudas_cliente(idcli, rol):
+    """
+    Obtiene las deudas pendientes de un cliente.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT idVenta, fecha_venta, valor_total FROM VENTA WHERE idCliente = %s AND estado_pago='PENDIENTE'", (idcli,))
+        deudas = cursor.fetchall()
+        return deudas
+    except Error as e:
+        raise Exception(f"Error al obtener deudas del cliente: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conexion is not None and conexion.is_connected():
+            conexion.close()
+
+def pago_total_venta(idventa, rol):
+    """
+    Obtiene el pago total de una venta.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+        cursor.execute("SELECT SUM(monto) FROM PAGO WHERE idVenta = %s", (idventa,))
+        pago = cursor.fetchone()
+        return pago['SUM(monto)'] if pago['SUM(monto)'] is not None else 0.00
+    except Error as e:
+        raise Exception(f"Error al obtener pago de venta: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conexion is not None and conexion.is_connected():
+            conexion.close()
+
 def obtener_productos(rol):
     """
     Obtiene todos los productos de la base de datos.
@@ -616,6 +657,8 @@ def eliminar_empleado(id_empleado, rol):
 # ---------------------------------------------------------------------------
 
 def obtener_gastos(rol):
+    from datetime import date
+    mes = date.today().month
     conexion = None
     cursor = None
     try:
@@ -625,8 +668,9 @@ def obtener_gastos(rol):
             SELECT g.idGasto, g.descripcion, g.monto, g.fecha, m.nombre AS cuenta, m.num_cuenta
             FROM GASTO g
             JOIN METODO_DE_PAGO m ON g.idMetodo_de_pago = m.idMetodo_de_pago
+            WHERE MONTH(g.fecha) = %s
             ORDER BY g.fecha DESC
-        """)
+        """, (mes,))
         return cursor.fetchall()
     except Error as e:
         raise Exception(f"Error al obtener gastos: {e}")
