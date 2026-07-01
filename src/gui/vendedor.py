@@ -1569,25 +1569,229 @@ class VendedorWindow(ctk.CTkToplevel):
 
     # ------------------ BALANCE: ESTADÍSTICAS ------------------
     def setup_balance_stats(self, parent):
-        info_frame = ctk.CTkFrame(parent, fg_color="#0a0a0a", corner_radius=15)
-        info_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        lbl_title = ctk.CTkLabel(
-            info_frame, 
-            text="Estadísticas de Productos", 
-            font=("Arial", 22, "bold"), 
-            text_color="#1DB954"
-        )
-        lbl_title.pack(pady=(40, 10))
-        
-        lbl_desc = ctk.CTkLabel(
-            info_frame, 
-            text="Esta sección está planificada para mostrar análisis avanzados de ventas, rotación de inventarios y rendimientos.\n¡Próximamente disponible!", 
-            font=("Arial", 14), 
-            text_color="#888888",
-            justify="center"
-        )
-        lbl_desc.pack(pady=10)
+        """Tabla de resumen financiero diario de los últimos 7 días."""
+        top_bar = ctk.CTkFrame(parent, fg_color="transparent")
+        top_bar.pack(fill="x", pady=(10, 15))
+
+        ctk.CTkLabel(
+            top_bar, text="Resumen Financiero — Últimos 7 Días",
+            font=("Arial", 16, "bold"), text_color="#aaaaaa"
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            top_bar, text="↻ Actualizar",
+            font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", hover_color="#333333", text_color="#1DB954",
+            width=100, command=self.actualizar_balance_stats
+        ).pack(side="right")
+
+        self.scroll_balance_stats = ctk.CTkScrollableFrame(parent, fg_color="#0a0a0a", corner_radius=10)
+        self.scroll_balance_stats.pack(fill="both", expand=True, pady=(0, 10))
+
+        self.actualizar_balance_stats()
+
+    def actualizar_balance_stats(self):
+        """Carga y renderiza la tabla de resumen financiero de 7 días."""
+        if not hasattr(self, 'scroll_balance_stats'):
+            return
+
+        for w in self.scroll_balance_stats.winfo_children():
+            w.destroy()
+
+        try:
+            from database.connection import obtener_resumen_financiero_7dias
+            datos = obtener_resumen_financiero_7dias(self.rol)
+        except Exception as e:
+            ctk.CTkLabel(
+                self.scroll_balance_stats,
+                text=f"Error al cargar resumen financiero:\n{e}",
+                text_color="#ff4d4d"
+            ).pack(pady=20)
+            return
+
+        if not datos:
+            ctk.CTkLabel(
+                self.scroll_balance_stats,
+                text="No hay datos financieros disponibles.",
+                text_color="#888888"
+            ).pack(pady=30)
+            return
+
+        # Contenedor de la tabla
+        table = ctk.CTkFrame(self.scroll_balance_stats, fg_color="transparent")
+        table.pack(fill="x", expand=True)
+
+        # Columnas: Fecha | Saldo Inicial | Gastos | Costos | CxC | Abono | Ventas | Total
+        col_headers = ["Fecha", "Saldo Inicial", "Gastos", "Costos", "CxC", "Abono", "Ventas", "Total"]
+        col_weights = [2, 2, 1, 1, 1, 1, 2, 2]
+
+        for i, w in enumerate(col_weights):
+            table.grid_columnconfigure(i, weight=w)
+
+        # Encabezados
+        for i, (hdr, _) in enumerate(zip(col_headers, col_weights)):
+            ctk.CTkLabel(
+                table, text=hdr,
+                font=("Arial", 12, "bold"), text_color="#1DB954",
+                fg_color="#1e1e1e", anchor="w", padx=8, pady=10
+            ).grid(row=0, column=i, sticky="nsew")
+
+        # Acumuladores para fila totalizadora
+        sum_gastos = 0.0
+        sum_costos = 0.0
+        sum_cxc = 0.0
+        sum_abonos = 0.0
+        sum_ventas = 0.0
+
+        # Filas de datos
+        for idx, dia in enumerate(datos):
+            row_idx = idx + 1
+            bg = "#121212" if idx % 2 == 0 else "#0a0a0a"
+
+            fecha_str = dia['fecha']
+            # Formatear fecha legible (dd/mm/yyyy)
+            try:
+                from datetime import datetime
+                fecha_obj = datetime.strptime(fecha_str, "%Y-%m-%d")
+                # Nombres de día en español
+                dias_semana = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+                nombre_dia = dias_semana[fecha_obj.weekday()]
+                fecha_display = f"{nombre_dia} {fecha_obj.strftime('%d/%m')}"
+            except Exception:
+                fecha_display = fecha_str
+
+            si = float(dia['saldo_inicial'])
+            g = float(dia['gastos'])
+            c = float(dia['costos'])
+            cxc = float(dia['cxc'])
+            a = float(dia['abonos'])
+            v = float(dia['ventas_total'])
+            se = float(dia['saldo_esperado'])
+
+            sum_gastos += g
+            sum_costos += c
+            sum_cxc += cxc
+            sum_abonos += a
+            sum_ventas += v
+
+            # Fecha
+            ctk.CTkLabel(
+                table, text=fecha_display,
+                font=("Arial", 12, "bold"), text_color="#ffffff",
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=0, sticky="nsew")
+
+            # Saldo Inicial
+            ctk.CTkLabel(
+                table, text=f"${si:,.0f}",
+                font=("Arial", 12), text_color="#cccccc",
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=1, sticky="nsew")
+
+            # Gastos (rojo)
+            g_color = "#ff4d4d" if g > 0 else "#555555"
+            ctk.CTkLabel(
+                table, text=f"-${g:,.0f}" if g > 0 else "$0",
+                font=("Arial", 12, "bold"), text_color=g_color,
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=2, sticky="nsew")
+
+            # Costos (naranja)
+            c_color = "#FF8C00" if c > 0 else "#555555"
+            ctk.CTkLabel(
+                table, text=f"-${c:,.0f}" if c > 0 else "$0",
+                font=("Arial", 12, "bold"), text_color=c_color,
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=3, sticky="nsew")
+
+            # CxC (amarillo)
+            cxc_color = "#FFD700" if cxc > 0 else "#555555"
+            ctk.CTkLabel(
+                table, text=f"${cxc:,.0f}" if cxc > 0 else "$0",
+                font=("Arial", 12), text_color=cxc_color,
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=4, sticky="nsew")
+
+            # Abono (verde claro)
+            a_color = "#1DB954" if a > 0 else "#555555"
+            ctk.CTkLabel(
+                table, text=f"+${a:,.0f}" if a > 0 else "$0",
+                font=("Arial", 12, "bold"), text_color=a_color,
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=5, sticky="nsew")
+
+            # Ventas
+            v_color = "#ffffff" if v > 0 else "#555555"
+            ctk.CTkLabel(
+                table, text=f"${v:,.0f}" if v > 0 else "$0",
+                font=("Arial", 12, "bold"), text_color=v_color,
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=6, sticky="nsew")
+
+            # Total / Saldo Esperado
+            se_color = "#1DB954" if se >= 0 else "#ff4d4d"
+            ctk.CTkLabel(
+                table, text=f"${se:,.0f}",
+                font=("Arial", 13, "bold"), text_color=se_color,
+                fg_color=bg, anchor="w", padx=8, pady=8
+            ).grid(row=row_idx, column=7, sticky="nsew")
+
+        # Fila totalizadora
+        total_row = len(datos) + 1
+        total_bg = "#1a2a1a"
+
+        ctk.CTkLabel(
+            table, text="TOTALES",
+            font=("Arial", 12, "bold"), text_color="#1DB954",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=0, sticky="nsew")
+
+        # Saldo Inicial del primer día
+        primer_si = float(datos[0]['saldo_inicial'])
+        ctk.CTkLabel(
+            table, text=f"${primer_si:,.0f}",
+            font=("Arial", 12, "bold"), text_color="#aaaaaa",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=1, sticky="nsew")
+
+        ctk.CTkLabel(
+            table, text=f"-${sum_gastos:,.0f}",
+            font=("Arial", 12, "bold"), text_color="#ff4d4d",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=2, sticky="nsew")
+
+        ctk.CTkLabel(
+            table, text=f"-${sum_costos:,.0f}",
+            font=("Arial", 12, "bold"), text_color="#FF8C00",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=3, sticky="nsew")
+
+        ctk.CTkLabel(
+            table, text=f"${sum_cxc:,.0f}",
+            font=("Arial", 12, "bold"), text_color="#FFD700",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=4, sticky="nsew")
+
+        ctk.CTkLabel(
+            table, text=f"+${sum_abonos:,.0f}",
+            font=("Arial", 12, "bold"), text_color="#1DB954",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=5, sticky="nsew")
+
+        ctk.CTkLabel(
+            table, text=f"${sum_ventas:,.0f}",
+            font=("Arial", 12, "bold"), text_color="#ffffff",
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=6, sticky="nsew")
+
+        # Total final = saldo esperado del último día
+        ultimo_se = float(datos[-1]['saldo_esperado'])
+        se_total_color = "#1DB954" if ultimo_se >= 0 else "#ff4d4d"
+        ctk.CTkLabel(
+            table, text=f"${ultimo_se:,.0f}",
+            font=("Arial", 13, "bold"), text_color=se_total_color,
+            fg_color=total_bg, anchor="w", padx=8, pady=10
+        ).grid(row=total_row, column=7, sticky="nsew")
 
     # ------------------ BALANCE: GASTOS ------------------
     def setup_balance_gastos(self, parent):

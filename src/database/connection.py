@@ -710,6 +710,152 @@ def insertar_gasto(id_metodo_pago, descripcion, monto, rol):
         if conexion is not None and conexion.is_connected(): conexion.close()
 
 
+def obtener_resumen_financiero_7dias(rol):
+    """
+    Obtiene un resumen financiero diario de los últimos 7 días.
+
+    Para cada día retorna:
+        - fecha:         la fecha del día
+        - saldo_inicial: saldo al inicio del día (antes de movimientos)
+        - gastos:        suma de GASTO.monto del día
+        - costos:        suma de ENVIO.valor (compras+envíos pagados) + PAGO_EMPLEADO.monto del día
+        - cxc:           valor_total de ventas PENDIENTE hechas ese día
+        - abonos:        suma de PAGO.monto (pagos recibidos de clientes) del día
+        - ventas_total:  valor_total de TODAS las ventas del día
+        - saldo_esperado: saldo_inicial - gastos - costos + abonos
+
+    Retorna:
+        list[dict]: Una fila por día, ordenada del más antiguo al más reciente.
+    """
+    from datetime import date, timedelta
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+
+        hoy = date.today()
+        hace_7 = hoy - timedelta(days=6)
+
+        # 1. Saldo ACTUAL total (sumamos todos los métodos de pago)
+        cursor.execute("SELECT COALESCE(SUM(saldo), 0) AS saldo_actual FROM METODO_DE_PAGO")
+        saldo_actual = float(cursor.fetchone()['saldo_actual'])
+
+        # 2. Gastos por día (últimos 7 días)
+        cursor.execute("""
+            SELECT DATE(fecha) AS dia, COALESCE(SUM(monto), 0) AS total
+            FROM GASTO
+            WHERE DATE(fecha) BETWEEN %s AND %s
+            GROUP BY DATE(fecha)
+        """, (hace_7, hoy))
+        gastos_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        # 3. Costos por día = envíos pagados + pagos de nómina + compras  
+        cursor.execute("""
+            SELECT DATE(fecha) AS dia, COALESCE(SUM(valor), 0) AS total
+            FROM ENVIO
+            WHERE DATE(fecha) BETWEEN %s AND %s
+            GROUP BY DATE(fecha)
+        """, (hace_7, hoy))
+        envios_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        cursor.execute("""
+            SELECT DATE(fecha_pago) AS dia, COALESCE(SUM(monto), 0) AS total
+            FROM PAGO_EMPLEADO
+            WHERE DATE(fecha_pago) BETWEEN %s AND %s
+            GROUP BY DATE(fecha_pago)
+        """, (hace_7, hoy))
+        nomina_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        cursor.execute("""
+            SELECT DATE(fechacompra) AS dia, COALESCE(SUM(total), 0) AS total
+            FROM COMPRA
+            WHERE DATE(fechacompra) BETWEEN %s AND %s
+            GROUP BY DATE(fechacompra)
+        """, (hace_7, hoy))
+        compras_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        # 4. CxC por día: ventas PENDIENTE hechas ese día
+        cursor.execute("""
+            SELECT DATE(fecha_venta) AS dia, COALESCE(SUM(valor_total), 0) AS total
+            FROM VENTA
+            WHERE estado_pago = 'PENDIENTE'
+              AND DATE(fecha_venta) BETWEEN %s AND %s
+            GROUP BY DATE(fecha_venta)
+        """, (hace_7, hoy))
+        cxc_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        # 5. Abonos por día: pagos recibidos de clientes
+        cursor.execute("""
+            SELECT DATE(fecha_pago) AS dia, COALESCE(SUM(monto), 0) AS total
+            FROM PAGO
+            WHERE DATE(fecha_pago) BETWEEN %s AND %s
+            GROUP BY DATE(fecha_pago)
+        """, (hace_7, hoy))
+        abonos_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        # 6. Ventas totales por día (todas, sin importar estado de pago)
+        cursor.execute("""
+            SELECT DATE(fecha_venta) AS dia, COALESCE(SUM(valor_total), 0) AS total
+            FROM VENTA
+            WHERE DATE(fecha_venta) BETWEEN %s AND %s
+            GROUP BY DATE(fecha_venta)
+        """, (hace_7, hoy))
+        ventas_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+
+        # 7. Reconstruir saldo_inicial de cada día
+        # El saldo actual refleja TODOS los movimientos hasta hoy.
+        # Recorremos de hoy hacia atrás, deshaciendo movimientos:
+        #   saldo_inicio(dia) = saldo_fin(dia) + gastos(dia) + costos(dia) - abonos(dia)
+        #   saldo_fin(dia) = saldo_inicio(dia+1)  ;  saldo_fin(hoy) = saldo_actual
+
+        dias = []
+        for i in range(7):
+            d = hace_7 + timedelta(days=i)
+            dias.append(str(d))
+
+        # Calcular saldo_fin de cada día, empezando por hoy
+        saldo_fin = {}
+        saldo_fin[dias[6]] = saldo_actual  # hoy
+
+        # De hoy hacia atrás
+        for i in range(6, 0, -1):
+            d = dias[i]
+            g = gastos_map.get(d, 0)
+            c = envios_map.get(d, 0) + nomina_map.get(d, 0) + compras_map.get(d, 0)
+            a = abonos_map.get(d, 0)
+            # saldo_inicio(d) = saldo_fin(d) + g + c - a
+            saldo_inicio_d = saldo_fin[d] + g + c - a
+            # saldo_fin del día anterior es saldo_inicio de hoy
+            saldo_fin[dias[i - 1]] = saldo_inicio_d
+
+        # Armar resultado
+        resultado = []
+        for d in dias:
+            g = gastos_map.get(d, 0)
+            c = envios_map.get(d, 0) + nomina_map.get(d, 0)
+            a = abonos_map.get(d, 0)
+            si = saldo_fin[d] + g + c - a  # saldo_inicio = saldo_fin + salidas - entradas
+            resultado.append({
+                'fecha': d,
+                'saldo_inicial': si,
+                'gastos': g,
+                'costos': c,
+                'cxc': cxc_map.get(d, 0),
+                'abonos': a,
+                'ventas_total': ventas_map.get(d, 0),
+                'saldo_esperado': saldo_fin[d],
+            })
+
+        return resultado
+
+    except Error as e:
+        raise Exception(f"Error al obtener resumen financiero: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
 def obtener_cuentas_por_pagar(rol):
     conexion = None
     cursor = None
