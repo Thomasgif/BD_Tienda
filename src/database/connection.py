@@ -833,7 +833,7 @@ def obtener_resumen_financiero_7dias(rol):
         resultado = []
         for d in dias:
             g = gastos_map.get(d, 0)
-            c = envios_map.get(d, 0) + nomina_map.get(d, 0)
+            c = envios_map.get(d, 0) + nomina_map.get(d, 0) + compras_map.get(d, 0)
             a = abonos_map.get(d, 0)
             si = saldo_fin[d] + g + c - a  # saldo_inicio = saldo_fin + salidas - entradas
             resultado.append({

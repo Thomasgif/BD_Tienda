@@ -354,7 +354,7 @@ class VendedorWindow(ctk.CTkToplevel):
         top_bar = ctk.CTkFrame(parent, fg_color="transparent")
         top_bar.pack(fill="x", padx=40, pady=(0, 20))
         
-        lbl_lista = ctk.CTkLabel(top_bar, text="Estado de Cuentas (Solo Lectura)", font=("Arial", 18, "bold"), text_color="#aaaaaa")
+        lbl_lista = ctk.CTkLabel(top_bar, text="Estado de Cuentas", font=("Arial", 18, "bold"), text_color="#aaaaaa")
         lbl_lista.pack(side="left")
 
         # Botón para actualizar manualmente
@@ -399,33 +399,35 @@ class VendedorWindow(ctk.CTkToplevel):
             if not cuentas:
                 ctk.CTkLabel(self.scroll_cuentas, text="No hay cuentas registradas aún.", text_color="#888888").pack(pady=20)
             else:
-                # Encabezados
-                headers_frame = ctk.CTkFrame(self.scroll_cuentas, fg_color="#1e1e1e", corner_radius=5)
-                headers_frame.pack(fill="x", pady=(0, 10))
+                # 1. CONTENEDOR MAESTRO ÚNICO PARA TU TABLA
+                table_frame = ctk.CTkFrame(self.scroll_cuentas, fg_color="transparent")
+                table_frame.pack(fill="x", expand=True)
                 
-                # Configurar columnas
-                headers_frame.grid_columnconfigure(0, weight=1) # Tipo de Cuenta
-                headers_frame.grid_columnconfigure(1, weight=1) # Número de Cuenta
-                headers_frame.grid_columnconfigure(2, weight=1) # Saldo Total
+                # 2. CONFIGURACIÓN DE COLUMNAS GLOBALES (3 columnas perfectas)
+                table_frame.grid_columnconfigure(0, weight=1) # Método/Cuenta
+                table_frame.grid_columnconfigure(1, weight=1) # Número
+                table_frame.grid_columnconfigure(2, weight=1) # Saldo Total
                 
-                ctk.CTkLabel(headers_frame, text="Método/Cuenta", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-                ctk.CTkLabel(headers_frame, text="Número", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=1, padx=10, pady=10, sticky="w")
-                ctk.CTkLabel(headers_frame, text="Saldo Total Recaudado", font=("Arial", 14, "bold"), text_color="#1DB954").grid(row=0, column=2, padx=10, pady=10, sticky="w")
+                # 3. ENCABEZADOS DE LA TABLA (Fila 0 de la grilla)
+                headers_color = "#1e1e1e"
+                ctk.CTkLabel(table_frame, text="Método/Cuenta", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=0, sticky="nsew")
+                ctk.CTkLabel(table_frame, text="Número", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=1, sticky="nsew")
+                ctk.CTkLabel(table_frame, text="Saldo Total Recaudado", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=2, sticky="nsew")
                 
-                # Filas de cuentas
+                # 4. ITERACIÓN DE FILAS DINÁMICAS (Filas consecutivas: idx + 1)
                 for idx, cuenta in enumerate(cuentas):
-                    row_frame = ctk.CTkFrame(self.scroll_cuentas, fg_color="#121212" if idx % 2 == 0 else "#0a0a0a", corner_radius=0)
-                    row_frame.pack(fill="x")
+                    row_idx = idx + 1
+                    row_color = "#121212" if idx % 2 == 0 else "#0a0a0a"
                     
-                    row_frame.grid_columnconfigure(0, weight=1)
-                    row_frame.grid_columnconfigure(1, weight=1)
-                    row_frame.grid_columnconfigure(2, weight=1)
+                    # Celda 0: Tipo de Cuenta
+                    ctk.CTkLabel(table_frame, text=cuenta['tipo_cuenta'], text_color="#ffffff", fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=0, sticky="nsew")
                     
-                    ctk.CTkLabel(row_frame, text=cuenta['tipo_cuenta'], text_color="#ffffff").grid(row=0, column=0, padx=10, pady=8, sticky="w")
-                    ctk.CTkLabel(row_frame, text=cuenta['num_cuenta'], text_color="#cccccc").grid(row=0, column=1, padx=10, pady=8, sticky="w")
+                    # Celda 1: Número de Cuenta
+                    ctk.CTkLabel(table_frame, text=cuenta['num_cuenta'], text_color="#cccccc", fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=1, sticky="nsew")
                     
+                    # Celda 2: Saldo formateado con tu fuente negrita verde
                     saldo = cuenta['saldo_total']
-                    ctk.CTkLabel(row_frame, text=f"${saldo:,.2f}", text_color="#1DB954", font=("Arial", 14, "bold")).grid(row=0, column=2, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(table_frame, text=f"${saldo:,.2f}", text_color="#1DB954", font=("Arial", 14, "bold"), fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=2, sticky="nsew")
 
         except Exception as e:
             with open("scratch/gui_debug.log", "a", encoding="utf-8") as f:
@@ -434,6 +436,59 @@ class VendedorWindow(ctk.CTkToplevel):
             
         with open("scratch/gui_debug.log", "a", encoding="utf-8") as f:
             f.write("--- actualizar_cuentas_tab END ---\n\n")
+
+    def render_cuentas(self, cuentas):
+        """
+        Renderiza la grilla única global para el estado de cuentas.
+        """
+        # Limpiar el contenedor scrollable
+        for widget in self.scroll_cuentas.winfo_children():
+            widget.destroy()
+
+        if not cuentas:
+            ctk.CTkLabel(self.scroll_cuentas, text="No hay registros de cuentas pendientes.", text_color="#888888").pack(pady=20)
+            return
+
+        # 1. CREAR UN SÓLO CONTENEDOR MAESTRO PARA TODA LA TABLA
+        table_frame = ctk.CTkFrame(self.scroll_cuentas, fg_color="transparent")
+        table_frame.pack(fill="x", expand=True)
+        
+        # 2. CONFIGURAR LAS COLUMNAS UNA SOLA VEZ
+        table_frame.grid_columnconfigure(0, weight=1) # ID Venta
+        table_frame.grid_columnconfigure(1, weight=2) # Cliente
+        table_frame.grid_columnconfigure(2, weight=1) # Fecha
+        table_frame.grid_columnconfigure(3, weight=1) # Total
+        table_frame.grid_columnconfigure(4, weight=1) # Estado
+        
+        # 3. ENCABEZADOS (Fila 0)
+        headers_color = "#1e1e1e"
+        ctk.CTkLabel(table_frame, text="ID Venta", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=0, sticky="nsew")
+        ctk.CTkLabel(table_frame, text="Cliente", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=1, sticky="nsew")
+        ctk.CTkLabel(table_frame, text="Fecha", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=2, sticky="nsew")
+        ctk.CTkLabel(table_frame, text="Total Facturado", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=3, sticky="nsew")
+        ctk.CTkLabel(table_frame, text="Estado", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=4, sticky="nsew")
+        
+        # 4. FILAS DE CUENTAS (Filas consecutivas: idx + 1)
+        for idx, cuenta in enumerate(cuentas):
+            row_idx = idx + 1
+            row_color = "#121212" if idx % 2 == 0 else "#0a0a0a"
+            
+            # Celdas informativas básicas
+            ctk.CTkLabel(table_frame, text=cuenta.get('id_venta', 'N/A'), text_color="#cccccc", fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=0, sticky="nsew")
+            
+            nombre_cliente = f"{cuenta.get('nombre', '')} {cuenta.get('apellidos', '')}".strip() or "Cliente General"
+            ctk.CTkLabel(table_frame, text=nombre_cliente, text_color="#ffffff", fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=1, sticky="nsew")
+            
+            ctk.CTkLabel(table_frame, text=cuenta.get('fecha', 'N/A'), text_color="#cccccc", fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=2, sticky="nsew")
+            
+            total = cuenta.get('total', 0)
+            ctk.CTkLabel(table_frame, text=f"${total:,.2f}", text_color="#cccccc", fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=3, sticky="nsew")
+            
+            # Formatear dinámicamente el estado (Ej: "pendiente" en rojo, "pagado" en verde)
+            estado = cuenta.get('estado', 'N/A').upper()
+            estado_color = "#ff4d4d" if "PENDIENTE" in estado else "#1DB954"
+            
+            ctk.CTkLabel(table_frame, text=estado, text_color=estado_color, fg_color=row_color, font=("Arial", 12, "bold"), anchor="w", padx=10, pady=8).grid(row=row_idx, column=4, sticky="nsew")
 
 
     def actualizar_productos_tab(self):
@@ -1137,7 +1192,7 @@ class VendedorWindow(ctk.CTkToplevel):
         self._render_empleados_tabla()
 
     def _render_empleados_tabla(self):
-        """Renderiza la tabla completa de nómina."""
+        """Renderiza la tabla completa de nómina mediante una grilla única global."""
         for w in self.scroll_empleados.winfo_children():
             w.destroy()
 
@@ -1149,95 +1204,106 @@ class VendedorWindow(ctk.CTkToplevel):
             ).pack(pady=30)
             return
 
-        # --- Encabezados ---
-        hdr = ctk.CTkFrame(self.scroll_empleados, fg_color="#1e1e1e", corner_radius=5)
-        hdr.pack(fill="x", pady=(0, 6))
-        pesos = [2, 1, 1, 1, 1, 1]
-        cols_hdr = ["Empleado", "Rol", "$/Hora", "Horas", "Total a Pagar", "Acciones"]
-        for i, (col, w) in enumerate(zip(cols_hdr, pesos)):
-            hdr.grid_columnconfigure(i, weight=w)
-            ctk.CTkLabel(
-                hdr, text=col,
-                font=("Arial", 13, "bold"), text_color="#1DB954"
-            ).grid(row=0, column=i, padx=10, pady=10, sticky="w")
+        # 1. CREAR UN SÓLO CONTENEDOR MAESTRO PARA TODA LA TABLA
+        table_frame = ctk.CTkFrame(self.scroll_empleados, fg_color="transparent")
+        table_frame.pack(fill="x", expand=True)
 
-        # --- Filas ---
+        # 2. CONFIGURAR LAS PROPORCIONES DE LAS COLUMNAS GLOBALES
+        pesos = [2, 1, 1, 1, 1, 1]
+        for i, w in enumerate(pesos):
+            table_frame.grid_columnconfigure(i, weight=w)
+
+        # 3. ENCABEZADOS (Fila 0 de la grilla)
+        headers_color = "#1e1e1e"
+        cols_hdr = ["Empleado", "Rol", "$/Hora", "Horas", "Total a Pagar", "Acciones"]
+        for i, col in enumerate(cols_hdr):
+            ctk.CTkLabel(
+                table_frame, text=col,
+                font=("Arial", 13, "bold"), text_color="#1DB954",
+                fg_color=headers_color, anchor="w", padx=12, pady=10
+            ).grid(row=0, column=i, sticky="nsew")
+
+        # 4. FILAS DINÁMICAS (2 filas matemáticas por empleado)
         for idx, emp in enumerate(empleados):
+            main_row = (idx * 2) + 1    # Fila para los datos principales
+            ventas_row = (idx * 2) + 2  # Fila para su desplegable de ventas
+            
             pago_hora   = float(emp.get('pago_hora',   0) or 0)
             trabajo_hora = float(emp.get('trabajo_hora', 0) or 0)
             total        = pago_hora * trabajo_hora
             emp_rol      = emp.get('rol', 0)
 
             bg = "#161616" if idx % 2 == 0 else "#0d0d0d"
-            contenedor = ctk.CTkFrame(self.scroll_empleados, fg_color=bg, corner_radius=6)
-            contenedor.pack(fill="x", pady=2)
 
-            fila = ctk.CTkFrame(contenedor, fg_color="transparent")
-            fila.pack(fill="x")
-            for i, w in enumerate(pesos):
-                fila.grid_columnconfigure(i, weight=w)
-
-            # Nombre
+            # Columna 0: Nombre
             ctk.CTkLabel(
-                fila, text=emp['nombre'],
-                font=("Arial", 14, "bold"), text_color="#ffffff"
-            ).grid(row=0, column=0, padx=12, pady=10, sticky="w")
+                table_frame, text=emp['nombre'],
+                font=("Arial", 14, "bold"), text_color="#ffffff",
+                fg_color=bg, anchor="w", padx=12, pady=10
+            ).grid(row=main_row, column=0, sticky="nsew")
 
-            # Rol badge
+            # Columna 1: Rol badge
             rol_txt   = "👑 Gerente" if emp_rol == 1 else "Empleado"
             rol_color = "#FFD700"   if emp_rol == 1 else "#aaaaaa"
             ctk.CTkLabel(
-                fila, text=rol_txt,
-                font=("Arial", 13), text_color=rol_color
-            ).grid(row=0, column=1, padx=12, pady=10, sticky="w")
+                table_frame, text=rol_txt,
+                font=("Arial", 13), text_color=rol_color,
+                fg_color=bg, anchor="w", padx=12, pady=10
+            ).grid(row=main_row, column=1, sticky="nsew")
 
-            # $/Hora
+            # Columna 2: $/Hora
             ctk.CTkLabel(
-                fila, text=f"${pago_hora:,.2f}",
-                font=("Arial", 13), text_color="#cccccc"
-            ).grid(row=0, column=2, padx=12, pady=10, sticky="w")
+                table_frame, text=f"${pago_hora:,.2f}",
+                font=("Arial", 13), text_color="#cccccc",
+                fg_color=bg, anchor="w", padx=12, pady=10
+            ).grid(row=main_row, column=2, sticky="nsew")
 
-            # Horas trabajadas
+            # Columna 3: Horas trabajadas
             horas_color = "#1DB954" if trabajo_hora > 0 else "#555555"
             ctk.CTkLabel(
-                fila, text=f"{trabajo_hora:.1f} h",
-                font=("Arial", 13, "bold"), text_color=horas_color
-            ).grid(row=0, column=3, padx=12, pady=10, sticky="w")
+                table_frame, text=f"{trabajo_hora:.1f} h",
+                font=("Arial", 13, "bold"), text_color=horas_color,
+                fg_color=bg, anchor="w", padx=12, pady=10
+            ).grid(row=main_row, column=3, sticky="nsew")
 
-            # Total a pagar
+            # Columna 4: Total a pagar
             total_color = "#1DB954" if total > 0 else "#555555"
             ctk.CTkLabel(
-                fila, text=f"${total:,.2f}",
-                font=("Arial", 14, "bold"), text_color=total_color
-            ).grid(row=0, column=4, padx=12, pady=10, sticky="w")
+                table_frame, text=f"${total:,.2f}",
+                font=("Arial", 14, "bold"), text_color=total_color,
+                fg_color=bg, anchor="w", padx=12, pady=10
+            ).grid(row=main_row, column=4, sticky="nsew")
 
-            # --- Botones de acción ---
-            acc = ctk.CTkFrame(fila, fg_color="transparent")
-            acc.grid(row=0, column=5, padx=10, pady=6, sticky="w")
+            # Columna 5: Contenedor de Acciones (Mantiene el fondo cebra continuo)
+            acc = ctk.CTkFrame(table_frame, fg_color=bg, corner_radius=0)
+            acc.grid(row=main_row, column=5, sticky="nsew")
 
-            # Frame expandible de ventas (oculto por defecto)
-            ventas_frame = ctk.CTkFrame(contenedor, fg_color="#0b0b0b", corner_radius=8)
+            # Frame expandible (Hijo directo de table_frame, esperando en su "ventas_row")
+            ventas_frame = ctk.CTkFrame(table_frame, fg_color="#0b0b0b", corner_radius=8)
             id_emp = emp['idEmpleado']
 
+            # Botón Ventas
             btn_ventas = ctk.CTkButton(
                 acc, text="▶ Ventas",
                 font=("Arial", 12), width=90, height=28,
                 fg_color="#1e2a1e", hover_color="#2d472d", text_color="#1DB954"
             )
             btn_ventas.configure(
-                command=lambda iid=id_emp, vf=ventas_frame, btn=btn_ventas:
-                    self._toggle_ventas(iid, vf, btn)
+                command=lambda iid=id_emp, vf=ventas_frame, btn=btn_ventas, r=ventas_row:
+                    self._toggle_ventas(iid, vf, btn, r)
             )
-            btn_ventas.pack(side="left", padx=(0, 6))
+            btn_ventas.pack(side="left", padx=(0, 6), pady=6)
 
+            # Botón Editar
             btn_editar = ctk.CTkButton(
                 acc, text="✏ Editar",
                 font=("Arial", 12), width=75, height=28,
                 fg_color="#1e1e1e", hover_color="#2b2b2b", text_color="#ffffff",
                 command=lambda e=emp: self._abrir_editar_empleado(e)
             )
-            btn_editar.pack(side="left", padx=(0, 6))
+            btn_editar.pack(side="left", padx=(0, 6), pady=6)
 
+            # Botón Pagar
             btn_pagar = ctk.CTkButton(
                 acc,
                 text="💳 Pagar",
@@ -1248,26 +1314,28 @@ class VendedorWindow(ctk.CTkToplevel):
                 state="normal" if total > 0 else "disabled",
                 command=lambda e=emp, t=total: self._abrir_modal_pago(e, t)
             )
-            btn_pagar.pack(side="left")
+            btn_pagar.pack(side="left", pady=6)
 
-            # Si ya estaba expandido, mostrarlo directamente
+            # Si el empleado ya estaba expandido, se dibuja en su fila reservada
             if id_emp in self._empleados_expandidos:
                 self._cargar_ventas_en_frame(id_emp, ventas_frame)
-                ventas_frame.pack(fill="x", padx=10, pady=(0, 10))
+                ventas_frame.grid(row=ventas_row, column=0, columnspan=6, padx=10, pady=(0, 10), sticky="ew")
                 btn_ventas.configure(text="▼ Ventas")
 
     # --- Helpers del módulo empleados ---
 
-    def _toggle_ventas(self, id_empleado, ventas_frame, btn):
-        """Expande o colapsa el panel de ventas del mes de un empleado."""
+    def _toggle_ventas(self, id_empleado, ventas_frame, btn, row):
+        """Expande o colapsa el panel de ventas usando grid (sin pack)."""
         if id_empleado in self._empleados_expandidos:
+            # Colapsar: Ocultar usando grid (colspan)
             self._empleados_expandidos.discard(id_empleado)
-            ventas_frame.pack_forget()
+            ventas_frame.grid_forget()
             btn.configure(text="▶ Ventas")
         else:
+            # Expandir: Mostrar usando grid (colspan)
             self._empleados_expandidos.add(id_empleado)
             self._cargar_ventas_en_frame(id_empleado, ventas_frame)
-            ventas_frame.pack(fill="x", padx=10, pady=(0, 10))
+            ventas_frame.grid(row=row, column=0, columnspan=6, padx=10, pady=(0, 10), sticky="ew")
             btn.configure(text="▼ Ventas")
 
     def _cargar_ventas_en_frame(self, id_empleado, ventas_frame):
@@ -1521,6 +1589,7 @@ class VendedorWindow(ctk.CTkToplevel):
         self.actualizar_balance_cuentas()
 
     def actualizar_balance_cuentas(self):
+        # Limpiar el contenedor scrollable
         for w in self.scroll_cuentas_pagar.winfo_children():
             w.destroy()
             
@@ -1535,37 +1604,73 @@ class VendedorWindow(ctk.CTkToplevel):
             ctk.CTkLabel(self.scroll_cuentas_pagar, text="No hay deudas o compras registradas.", text_color="#888888").pack(pady=30)
             return
             
-        # Encabezados
-        hdr = ctk.CTkFrame(self.scroll_cuentas_pagar, fg_color="#1e1e1e", corner_radius=5)
-        hdr.pack(fill="x", pady=(0, 6))
+        # 1. CONTENEDOR MAESTRO ÚNICO PARA TU TABLA
+        table_frame = ctk.CTkFrame(self.scroll_cuentas_pagar, fg_color="transparent")
+        table_frame.pack(fill="x", expand=True)
+        
+        # 2. CONFIGURACIÓN DE LAS COLUMNAS GLOBALES
         pesos = [1, 2, 2, 1, 1]
+        for i, w in enumerate(pesos):
+            table_frame.grid_columnconfigure(i, weight=w)
+            
+        # 3. ENCABEZADOS DE LA TABLA (Fila 0 de la grilla)
+        headers_color = "#1e1e1e"
         cols = ["Compra ID", "Proveedor", "Fecha Compra", "Total Compra", "Estado Envío"]
-        for i, (col, w) in enumerate(zip(cols, pesos)):
-            hdr.grid_columnconfigure(i, weight=w)
-            ctk.CTkLabel(hdr, text=col, font=("Arial", 12, "bold"), text_color="#1DB954").grid(row=0, column=i, padx=10, pady=8, sticky="w")
+        for i, col in enumerate(cols):
+            ctk.CTkLabel(
+                table_frame, text=col, 
+                font=("Arial", 12, "bold"), text_color="#1DB954",
+                fg_color=headers_color, anchor="w", padx=10, pady=8
+            ).grid(row=0, column=i, sticky="nsew")
             
+        # 4. ITERACIÓN DE FILAS DINÁMICAS (Filas consecutivas: idx + 1)
         for idx, c in enumerate(cuentas):
+            row_idx = idx + 1
             bg = "#161616" if idx % 2 == 0 else "#0d0d0d"
-            row = ctk.CTkFrame(self.scroll_cuentas_pagar, fg_color=bg, corner_radius=5)
-            row.pack(fill="x", pady=2)
             
-            for i, w in enumerate(pesos):
-                row.grid_columnconfigure(i, weight=w)
-                
+            # Formateo y validación segura de la fecha
             fecha = c.get('fechacompra', '')
             if hasattr(fecha, 'strftime'):
                 fecha = fecha.strftime('%d/%m/%Y %H:%M')
                 
             total = float(c.get('total_compra', 0) or 0)
             
-            ctk.CTkLabel(row, text=f"#{c['idCompra']}", font=("Arial", 13, "bold"), text_color="#ffffff").grid(row=0, column=0, padx=10, pady=8, sticky="w")
-            ctk.CTkLabel(row, text=c['proveedor'], font=("Arial", 13), text_color="#ffffff").grid(row=0, column=1, padx=10, pady=8, sticky="w")
-            ctk.CTkLabel(row, text=str(fecha), font=("Arial", 13), text_color="#cccccc").grid(row=0, column=2, padx=10, pady=8, sticky="w")
-            ctk.CTkLabel(row, text=f"${total:,.2f}", font=("Arial", 13, "bold"), text_color="#1DB954").grid(row=0, column=3, padx=10, pady=8, sticky="w")
+            # Celda 0: Compra ID
+            ctk.CTkLabel(
+                table_frame, text=f"#{c['idCompra']}", 
+                font=("Arial", 13, "bold"), text_color="#ffffff",
+                fg_color=bg, anchor="w", padx=10, pady=8
+            ).grid(row=row_idx, column=0, sticky="nsew")
             
+            # Celda 1: Proveedor
+            ctk.CTkLabel(
+                table_frame, text=c['proveedor'], 
+                font=("Arial", 13), text_color="#ffffff",
+                fg_color=bg, anchor="w", padx=10, pady=8
+            ).grid(row=row_idx, column=1, sticky="nsew")
+            
+            # Celda 2: Fecha Compra
+            ctk.CTkLabel(
+                table_frame, text=str(fecha), 
+                font=("Arial", 13), text_color="#cccccc",
+                fg_color=bg, anchor="w", padx=10, pady=8
+            ).grid(row=row_idx, column=2, sticky="nsew")
+            
+            # Celda 3: Total Compra
+            ctk.CTkLabel(
+                table_frame, text=f"${total:,.2f}", 
+                font=("Arial", 13, "bold"), text_color="#1DB954",
+                fg_color=bg, anchor="w", padx=10, pady=8
+            ).grid(row=row_idx, column=3, sticky="nsew")
+            
+            # Celda 4: Estado Envío (Color dinámico semántico)
             est = c['estado_envio']
             est_color = "#1DB954" if est == "Envío Registrado" else "#FFD700"
-            ctk.CTkLabel(row, text=est, font=("Arial", 13), text_color=est_color).grid(row=0, column=4, padx=10, pady=8, sticky="w")
+            ctk.CTkLabel(
+                table_frame, text=est, 
+                font=("Arial", 13), text_color=est_color,
+                fg_color=bg, anchor="w", padx=10, pady=8
+            ).grid(row=row_idx, column=4, sticky="nsew")
 
     # ------------------ BALANCE: ESTADÍSTICAS ------------------
     def setup_balance_stats(self, parent):
