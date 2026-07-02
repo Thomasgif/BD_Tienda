@@ -1,6 +1,131 @@
 import customtkinter as ctk
 
 
+class NuevoProductoModal(ctk.CTkToplevel):
+    def __init__(self, master=None, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.rol = getattr(master, 'rol', 1)
+        self.title("Registrar Nuevo Producto")
+        self.geometry("380x480")
+        self.resizable(False, False)
+        self.configure(fg_color="#0d0d0d")
+        self.transient(master)
+        self.grab_set()
+        self.focus()
+
+        # Frame Principal
+        self.frame = ctk.CTkFrame(
+            self, corner_radius=15,
+            fg_color="#121212",
+            border_color="#1DB954", border_width=1,
+        )
+        self.frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+        ctk.CTkLabel(
+            self.frame, text="NUEVO PRODUCTO",
+            font=("Arial", 16, "bold"), text_color="#1DB954",
+        ).pack(pady=(15, 10))
+
+        # Estilo común para inputs
+        input_style = {
+            "height": 36, "corner_radius": 8,
+            "fg_color": "#1e1e1e", "border_color": "#333333",
+            "text_color": "#ffffff", "placeholder_text_color": "#666666"
+        }
+
+        # Nombre
+        ctk.CTkLabel(self.frame, text="Nombre del Producto *", font=("Arial", 11, "bold"), text_color="#aaaaaa").pack(anchor="w", padx=20, pady=(5, 1))
+        self.entry_nombre = ctk.CTkEntry(self.frame, placeholder_text="Ej: Mancuerna 10kg", **input_style)
+        self.entry_nombre.pack(fill="x", padx=20)
+
+        # Referencia
+        ctk.CTkLabel(self.frame, text="Referencia / Código *", font=("Arial", 11, "bold"), text_color="#aaaaaa").pack(anchor="w", padx=20, pady=(5, 1))
+        self.entry_referencia = ctk.CTkEntry(self.frame, placeholder_text="Ej: GYM-02", **input_style)
+        self.entry_referencia.pack(fill="x", padx=20)
+
+        # Precios
+        precios_row = ctk.CTkFrame(self.frame, fg_color="transparent")
+        precios_row.pack(fill="x", padx=20, pady=5)
+        precios_row.grid_columnconfigure(0, weight=1)
+        precios_row.grid_columnconfigure(1, weight=1)
+
+        # Precio Compra
+        ctk.CTkLabel(precios_row, text="P. Compra *", font=("Arial", 11, "bold"), text_color="#aaaaaa").grid(row=0, column=0, sticky="w", pady=(0, 1))
+        self.entry_pcompra = ctk.CTkEntry(precios_row, placeholder_text="12.50", **input_style)
+        self.entry_pcompra.grid(row=1, column=0, sticky="ew", padx=(0, 5))
+
+        # Precio Venta
+        ctk.CTkLabel(precios_row, text="P. Venta *", font=("Arial", 11, "bold"), text_color="#aaaaaa").grid(row=0, column=1, sticky="w", pady=(0, 1))
+        self.entry_pventa = ctk.CTkEntry(precios_row, placeholder_text="25.00", **input_style)
+        self.entry_pventa.grid(row=1, column=1, sticky="ew", padx=(5, 0))
+
+        # Descripción
+        ctk.CTkLabel(self.frame, text="Descripción *", font=("Arial", 11, "bold"), text_color="#aaaaaa").pack(anchor="w", padx=20, pady=(5, 1))
+        self.entry_descripcion = ctk.CTkEntry(self.frame, placeholder_text="Breve descripción", **input_style)
+        self.entry_descripcion.pack(fill="x", padx=20)
+
+        # Label Error
+        self.lbl_error = ctk.CTkLabel(self.frame, text="", font=("Arial", 11), text_color="#ff4d4d", wraplength=300)
+        self.lbl_error.pack(pady=8)
+
+        # Botones
+        btn_row = ctk.CTkFrame(self.frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(5, 10))
+
+        ctk.CTkButton(
+            btn_row, text="Cancelar",
+            fg_color="#1e1e1e", hover_color="#2d2d2d", text_color="#ffffff",
+            command=self.destroy, height=36
+        ).pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        ctk.CTkButton(
+            btn_row, text="Guardar",
+            fg_color="#1DB954", hover_color="#179643", text_color="#000000",
+            command=self._guardar_producto, height=36, font=("Arial", 12, "bold")
+        ).pack(side="right", fill="x", expand=True, padx=(5, 0))
+
+    def _guardar_producto(self):
+        self.lbl_error.configure(text="", text_color="#ff4d4d")
+        
+        nombre = self.entry_nombre.get().strip()
+        ref = self.entry_referencia.get().strip()
+        pcompra_str = self.entry_pcompra.get().strip()
+        pventa_str = self.entry_pventa.get().strip()
+        desc = self.entry_descripcion.get().strip()
+
+        if not nombre or not ref or not pcompra_str or not pventa_str or not desc:
+            self.lbl_error.configure(text="Por favor complete todos los campos obligatorios (*).")
+            return
+
+        try:
+            pcompra = float(pcompra_str.replace(",", "."))
+            pventa = float(pventa_str.replace(",", "."))
+            if pcompra < 0 or pventa < 0:
+                raise ValueError
+        except ValueError:
+            self.lbl_error.configure(text="Los precios deben ser números mayores o iguales a cero.")
+            return
+
+        try:
+            from database.connection import insertar_producto
+            new_id = insertar_producto(
+                nombre=nombre,
+                referencia=ref,
+                precio_compra=pcompra,
+                precio_venta=pventa,
+                descripcion=desc,
+                rol=self.rol
+            )
+            
+            # Notificar al master (NuevaCompraWindow) para recargar y seleccionar
+            if self.master and hasattr(self.master, '_on_producto_registrado'):
+                self.master._on_producto_registrado(nombre, ref, pcompra, new_id)
+                
+            self.destroy()
+        except Exception as e:
+            self.lbl_error.configure(text=str(e))
+
+
 class NuevaCompraWindow(ctk.CTkToplevel):
     """
     Ventana modal para registrar una nueva compra para un proveedor específico.
@@ -22,11 +147,13 @@ class NuevaCompraWindow(ctk.CTkToplevel):
         # Lista de productos en el carrito: [{'idProducto', 'nombre', 'referencia', 'precio_compra', 'cantidad'}]
         self._carrito = []
         self._productos_db = []   # todos los productos disponibles
+        self._metodos_db = []     # todos los métodos de pago disponibles
+        self._mapa_metodos = {}   # mapa de texto a ID
 
         # ── Ventana ───────────────────────────────────────────────────────────
         nombre_prov = self.proveedor.get('nombre', 'Proveedor')
         self.title(f"Nueva Compra — {nombre_prov}")
-        self.geometry("620x680")
+        self.geometry("620x720")
         self.resizable(False, False)
         self.configure(fg_color="#050505")
         self.transient(master)
@@ -56,14 +183,46 @@ class NuevaCompraWindow(ctk.CTkToplevel):
         # ── Separador ─────────────────────────────────────────────────────────
         ctk.CTkFrame(self.frame, height=1, fg_color="#2a2a2a").pack(fill="x", padx=20, pady=(0, 10))
 
+        # ── Medio de Pago ─────────────────────────────────────────────────────
+        pago_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        pago_frame.pack(fill="x", padx=20, pady=(0, 10))
+
+        ctk.CTkLabel(
+            pago_frame, text="Medio de Pago: *",
+            font=("Arial", 13, "bold"), text_color="#cccccc",
+        ).pack(side="left", padx=(5, 10))
+
+        self.combo_pago = ctk.CTkComboBox(
+            pago_frame,
+            values=["Cargando métodos..."],
+            height=36, corner_radius=8,
+            fg_color="#1e1e1e", border_color="#333333",
+            text_color="#ffffff",
+            dropdown_fg_color="#1e1e1e",
+            dropdown_text_color="#ffffff",
+            width=360,
+        )
+        self.combo_pago.pack(side="left")
+
         # ── Sección agregar producto ──────────────────────────────────────────
         add_frame = ctk.CTkFrame(self.frame, fg_color="#1a1a1a", corner_radius=10)
         add_frame.pack(fill="x", padx=20, pady=(0, 10))
 
+        header_row = ctk.CTkFrame(add_frame, fg_color="transparent")
+        header_row.pack(fill="x", padx=15, pady=(12, 6))
+
         ctk.CTkLabel(
-            add_frame, text="Agregar Producto",
+            header_row, text="Agregar Producto",
             font=("Arial", 13, "bold"), text_color="#cccccc",
-        ).pack(anchor="w", padx=15, pady=(12, 6))
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            header_row, text="✨ + Registrar Producto Nuevo",
+            font=("Arial", 11, "bold"),
+            fg_color="#2b2b2b", hover_color="#3a3a3a",
+            text_color="#1DB954", height=24,
+            command=self._abrir_registro_nuevo_producto,
+        ).pack(side="right")
 
         selector_row = ctk.CTkFrame(add_frame, fg_color="transparent")
         selector_row.pack(fill="x", padx=15, pady=(0, 12))
@@ -163,8 +322,9 @@ class NuevaCompraWindow(ctk.CTkToplevel):
         )
         self.btn_confirmar.pack(side="right", fill="x", expand=True, padx=(10, 0))
 
-        # ── Cargar productos de la BD ─────────────────────────────────────────
+        # ── Cargar datos de la BD ─────────────────────────────────────────────
         self._cargar_productos()
+        self._cargar_metodos_pago()
 
     # ── Lógica interna ────────────────────────────────────────────────────────
 
@@ -185,6 +345,52 @@ class NuevaCompraWindow(ctk.CTkToplevel):
         except Exception as e:
             self.combo_producto.configure(values=[f"Error: {e}"])
             self.combo_producto.set(f"Error: {e}")
+
+    def _cargar_metodos_pago(self):
+        try:
+            from database.connection import obtener_saldos_cuentas
+            self._metodos_db = obtener_saldos_cuentas(self.rol)
+            self._mapa_metodos = {}
+            valores = []
+            for c in self._metodos_db:
+                nombre_metodo = f"{c['tipo_cuenta']} ({c['num_cuenta']}) — Saldo: ${float(c['saldo_total']):,.2f}"
+                self._mapa_metodos[nombre_metodo] = {
+                    'id': c['idMetodo_de_pago'],
+                    'saldo': float(c['saldo_total'])
+                }
+                valores.append(nombre_metodo)
+            
+            if valores:
+                self.combo_pago.configure(values=valores)
+                self.combo_pago.set(valores[0])
+            else:
+                self.combo_pago.configure(values=["Sin métodos registrados"])
+                self.combo_pago.set("Sin métodos registrados")
+        except Exception as e:
+            self.combo_pago.configure(values=[f"Error: {e}"])
+            self.combo_pago.set(f"Error: {e}")
+
+    def _abrir_registro_nuevo_producto(self):
+        # Abre el modal para registrar un nuevo producto
+        NuevoProductoModal(self)
+
+    def _on_producto_registrado(self, nombre, referencia, precio_compra, new_id):
+        # Recargar lista de productos
+        self._cargar_productos()
+        
+        # Intentar seleccionar el recién creado
+        for p in self._productos_db:
+            if p['idProducto'] == new_id:
+                label = f"{p['nombre']} (Ref: {p['referencia']}) — ${float(p['precio_compra']):,.2f}"
+                self.combo_producto.set(label)
+                break
+                
+        # Refrescar listados del master
+        if self.master:
+            if hasattr(self.master, 'actualizar_productos_tab'):
+                self.master.actualizar_productos_tab()
+            if hasattr(self.master, 'actualizar_combobox_productos'):
+                self.master.actualizar_combobox_productos()
 
     def _agregar_producto(self):
         self.error_label.configure(text="", text_color="#ff4d4d")
@@ -317,11 +523,33 @@ class NuevaCompraWindow(ctk.CTkToplevel):
             self.error_label.configure(text="No se pudo identificar al empleado. Inicia sesión nuevamente.")
             return
 
+        # Obtener método de pago seleccionado
+        sel_pago = self.combo_pago.get()
+        if not sel_pago or sel_pago == "Cargando métodos..." or sel_pago == "Sin métodos registrados" or sel_pago.startswith("Error:"):
+            self.error_label.configure(text="Selecciona un método de pago válido.")
+            return
+
+        metodo_info = self._mapa_metodos.get(sel_pago)
+        if not metodo_info:
+            self.error_label.configure(text="Método de pago seleccionado no válido.")
+            return
+
+        id_metodo_pago = metodo_info['id']
+        total_compra = sum(item['precio_compra'] * item['cantidad'] for item in self._carrito)
+
+        if total_compra > metodo_info['saldo']:
+            self.error_label.configure(text=f"Saldo insuficiente en la cuenta seleccionada. Saldo disponible: ${metodo_info['saldo']:,.2f}")
+            return
+
         try:
             from database.connection import insertar_compra
 
             productos = [
-                {'idProducto': item['idProducto'], 'cantidad': item['cantidad']}
+                {
+                    'idProducto': item['idProducto'],
+                    'cantidad': item['cantidad'],
+                    'precio_compra': item['precio_compra']
+                }
                 for item in self._carrito
             ]
 
@@ -329,6 +557,8 @@ class NuevaCompraWindow(ctk.CTkToplevel):
                 id_proveedor=self.proveedor['idProveedor'],
                 id_empleado=self.id_emp,
                 productos=productos,
+                id_metodo_pago=id_metodo_pago,
+                total=total_compra,
                 rol=self.rol,
             )
 
@@ -338,8 +568,13 @@ class NuevaCompraWindow(ctk.CTkToplevel):
             self.btn_confirmar.configure(state="disabled")
 
             # Refrescar el detalle del proveedor en la ventana padre
-            if self.master and hasattr(self.master, 'mostrar_detalle_proveedor'):
-                self.master.mostrar_detalle_proveedor(self.proveedor)
+            if self.master:
+                if hasattr(self.master, 'mostrar_detalle_proveedor'):
+                    self.master.mostrar_detalle_proveedor(self.proveedor)
+                if hasattr(self.master, 'actualizar_cuentas_tab'):
+                    self.master.actualizar_cuentas_tab()
+                if hasattr(self.master, 'actualizar_balance_cuentas'):
+                    self.master.actualizar_balance_cuentas()
 
             self.after(1200, self.destroy)
 
