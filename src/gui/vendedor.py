@@ -1,5 +1,7 @@
 import customtkinter as ctk
 from math import isfinite
+import os
+from PIL import Image
 from database.connection import obtener_clientes, obtener_productos, obtener_saldos_cuentas
 
 class VendedorWindow(ctk.CTkToplevel):
@@ -26,16 +28,45 @@ class VendedorWindow(ctk.CTkToplevel):
         self.sidebar_frame.grid_rowconfigure(10, weight=1) # Espacio vacío ANTES del botón de cerrar sesión
 
         # Etiqueta para el Logo (Placeholder)
-        self.logo_placeholder = ctk.CTkLabel(
-            self.sidebar_frame, 
-            text="[ LOGO ]", 
-            width=100,
-            height=100,
-            corner_radius=15,
-            fg_color="#1e1e1e",
-            text_color="#555555",
-            font=("Arial", 16, "bold")
-        )
+        ruta_logo = os.path.join("assets", "logo.jpeg")
+
+        try:
+            # Abrimos la imagen con PIL
+            imagen_pil = Image.open(ruta_logo)
+
+            if imagen_pil.mode != "RGB":
+                imagen_pil = imagen_pil.convert("RGB")
+            
+            # Creamos el objeto CTkImage especificando el tamaño (ej: 100x100)
+            self.logo_image = ctk.CTkImage(
+                light_image=imagen_pil, 
+                dark_image=imagen_pil, 
+                size=(100, 100) # Ajusta el tamaño comercial aquí
+            )
+            
+            # Creamos el Label definitivo asignando la imagen y limpiando el texto
+            self.logo_placeholder = ctk.CTkLabel(
+                self.sidebar_frame, 
+                text="",  # Quitamos el texto [ LOGO ]
+                image=self.logo_image
+            )
+
+            self.logo_placeholder.image = self.logo_image
+
+        except (FileNotFoundError, Exception) as e:
+            # SISTEMA ANTICRASH: Si la imagen no existe o está corrupta,
+            # dibuja un placeholder elegante para que el programa siga funcionando.
+            print(f"Advertencia: No se pudo cargar el logo ({e}). Usando plantilla.")
+            self.logo_placeholder = ctk.CTkLabel(
+                self.sidebar_frame, 
+                text="[ LOGO ]\nNo encontrado", 
+                width=100,
+                height=100,
+                corner_radius=15,
+                fg_color="#1e1e1e",
+                text_color="#ff4d4d", # Texto en rojo sutil para alertar al admin
+                font=("Arial", 11, "bold")
+            )
         self.logo_placeholder.grid(row=0, column=0, padx=20, pady=(30, 10))
 
         # Nombre de la Empresa
