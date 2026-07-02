@@ -1114,3 +1114,67 @@ def insertar_compra(id_proveedor, id_empleado, productos, rol):
     finally:
         if cursor is not None: cursor.close()
         if conexion is not None and conexion.is_connected(): conexion.close()
+
+def registrar_venta(id_empleado, id_cliente, productos, id_metodo_pago, monto_pagado, estado_pago, valor_total, rol):
+    """
+    Registra una nueva venta y sus detalles en una transacción.
+    Si se especifica un id_metodo_pago y el estado es PAGADO,
+    también registra el pago y actualiza el saldo del método de pago.
+    Actualiza el inventario restando las cantidades vendidas.
+    
+    productos: list[dict] con llaves 'idProducto', 'cantidad'.
+    """
+    conexion = None
+    cursor = None
+    try:
+        from database.connection import obtener_conexion
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+
+        # 1. Insertar en VENTA
+        consulta_venta = """
+            INSERT INTO VENTA (idEmpleado, idCliente, estado_pago, valor_total)
+            VALUES (%s, %s, %s, %s)
+        """
+        cursor.execute(consulta_venta, (id_empleado, id_cliente, estado_pago, valor_total))
+        id_venta = cursor.lastrowid
+
+        # 2. Insertar DETALLE_VENTA y actualizar bodega en PRODUCTO
+        for prod in productos:
+            id_prod = prod['idProducto']
+            cantidad = prod['cantidad']
+
+            # Insertar detalle
+            cursor.execute(
+                "INSERT INTO DETALLE_VENTA (idProducto, idVenta, cantidad) VALUES (%s, %s, %s)",
+                (id_prod, id_venta, cantidad)
+            )
+
+            # Restar del inventario
+            cursor.execute(
+                "UPDATE PRODUCTO SET bodega = bodega - %s WHERE idProducto = %s",
+                (cantidad, id_prod)
+            )
+
+        # 3. Si hay un pago (total o parcial), registrar en PAGO y actualizar METODO_DE_PAGO
+        if id_metodo_pago is not None and monto_pagado > 0:
+            cursor.execute(
+                "INSERT INTO PAGO (idCliente, idVenta, idMetodo_de_pago, monto) VALUES (%s, %s, %s, %s)",
+                (id_cliente, id_venta, id_metodo_pago, monto_pagado)
+            )
+            # Sumar al saldo de la cuenta de la empresa
+            cursor.execute(
+                "UPDATE METODO_DE_PAGO SET saldo = saldo + %s WHERE idMetodo_de_pago = %s",
+                (monto_pagado, id_metodo_pago)
+            )
+
+        conexion.commit()
+        return id_venta
+    except Exception as e:
+        if conexion:
+            conexion.rollback()
+        raise Exception(f"Error al registrar la venta: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+

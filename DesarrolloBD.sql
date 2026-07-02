@@ -97,11 +97,13 @@ CREATE TABLE METODO_DE_PAGO (
 CREATE TABLE VENTA (
     idVenta INT AUTO_INCREMENT NOT NULL,
     idEmpleado INT,
+    idCliente INT,
     fecha_venta TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     estado_pago VARCHAR(10) NOT NULL,
     valor_total DECIMAL(10, 2) NOT NULL CHECK (valor_total >= 0),
     CONSTRAINT pk_venta PRIMARY KEY (idVenta),
-    FOREIGN KEY (idEmpleado) REFERENCES EMPLEADO (idEmpleado)
+    FOREIGN KEY (idEmpleado) REFERENCES EMPLEADO (idEmpleado),
+    FOREIGN KEY (idCliente) REFERENCES CLIENTE (idCliente)
 );
 
 -- 10. PAGO
@@ -174,3 +176,7 @@ CREATE TABLE IF NOT EXISTS GASTO (
     CONSTRAINT pk_gasto PRIMARY KEY (idGasto),
     FOREIGN KEY (idMetodo_de_pago) REFERENCES METODO_DE_PAGO (idMetodo_de_pago)
 );
+
+-- 16. Modificaciones de Ventas
+ALTER TABLE VENTA ADD COLUMN idCliente INT,
+    ADD CONSTRAINT fk_venta_cliente FOREIGN KEY (idCliente) REFERENCES CLIENTE (idCliente);

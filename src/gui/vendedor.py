@@ -246,6 +246,9 @@ class VendedorWindow(ctk.CTkToplevel):
             
             ctk.CTkLabel(table_frame, text=stock_text, text_color=stock_color, fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=3, sticky="nsew")
     def setup_ventas_tab(self, parent):
+        self.carrito_ventas = []
+        self.total_ventas = 0.0
+        
         # Layout de 2 columnas: Formulario a la izquierda, Carrito a la derecha
         # Frame contenedor principal
         main_container = ctk.CTkFrame(parent, fg_color="transparent")
@@ -298,23 +301,7 @@ class VendedorWindow(ctk.CTkToplevel):
         )
         btn_agregar_prod.grid(row=5, column=0, columnspan=2, padx=20, pady=10)
 
-        # Separador
-        ctk.CTkFrame(form_frame, height=1, fg_color="#333333").grid(row=6, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
-        
-        # Forma de Pago
-        lbl_pago = ctk.CTkLabel(form_frame, text="Forma de Pago:", font=("Arial", 14, "bold"), text_color="#cccccc")
-        lbl_pago.grid(row=7, column=0, padx=20, pady=10, sticky="w")
-        
-        self.combo_pago = ctk.CTkComboBox(form_frame, values=["Seleccione método..."], width=200)
-        self.combo_pago.grid(row=7, column=1, padx=20, pady=10, sticky="w")
-        
-        # Observaciones
-        lbl_obs = ctk.CTkLabel(form_frame, text="Observaciones:", font=("Arial", 14, "bold"), text_color="#cccccc")
-        lbl_obs.grid(row=8, column=0, padx=20, pady=10, sticky="nw")
-        
-        self.text_obs = ctk.CTkTextbox(form_frame, width=200, height=60, fg_color="#121212", border_color="#333333", border_width=1)
-        self.text_obs.grid(row=8, column=1, padx=20, pady=10, sticky="w")
-        
+        # Separador eliminado (o lo dejamos si es necesario, pero quitamos Forma de Pago)        
         # ---- DERECHA: CARRITO Y TOTAL ----
         lbl_carrito = ctk.CTkLabel(cart_frame, text="Lista de Productos", font=("Arial", 18, "bold"), text_color="#aaaaaa")
         lbl_carrito.pack(padx=20, pady=(20, 10), anchor="w")
@@ -1123,12 +1110,191 @@ class VendedorWindow(ctk.CTkToplevel):
             print(f"Error al actualizar métodos de pago: {e}")
 
     def agregar_producto_lista(self):
-        # Función en blanco temporalmente para simular agregar producto
-        pass
+        prod_str = self.combo_producto.get()
+        cant_str = self.entry_cantidad.get().strip()
+
+        if prod_str == "Seleccione producto..." or not prod_str:
+            return
+
+        try:
+            cantidad = int(cant_str)
+            if cantidad <= 0:
+                return
+        except ValueError:
+            return
+
+        producto_sel = None
+        for p in getattr(self, 'todos_productos', []):
+            if f"{p['nombre']} ({p['referencia']})" == prod_str:
+                producto_sel = p
+                break
+        
+        if not producto_sel:
+            return
+            
+        bodega = int(producto_sel.get('bodega', 0) or 0)
+        cant_en_carrito = sum(item['cantidad'] for item in self.carrito_ventas if item['idProducto'] == producto_sel['idProducto'])
+        if cantidad + cant_en_carrito > bodega:
+            # No hay suficiente inventario
+            return
+
+        encontrado = False
+        for item in self.carrito_ventas:
+            if item['idProducto'] == producto_sel['idProducto']:
+                item['cantidad'] += cantidad
+                encontrado = True
+                break
+                
+        if not encontrado:
+            self.carrito_ventas.append({
+                'idProducto': producto_sel['idProducto'],
+                'nombre': producto_sel['nombre'],
+                'referencia': producto_sel['referencia'],
+                'precio_venta': float(producto_sel['precio_venta']),
+                'cantidad': cantidad
+            })
+
+        self.actualizar_carrito_ui()
+        
+        # Reiniciar producto y cantidad
+        self.entry_cantidad.delete(0, 'end')
+        self.combo_producto.set("Seleccione producto...")
+
+    def actualizar_carrito_ui(self):
+        for w in self.scroll_carrito.winfo_children():
+            w.destroy()
+            
+        self.total_ventas = 0.0
+        
+        if not self.carrito_ventas:
+            self.lbl_carrito_vacio = ctk.CTkLabel(self.scroll_carrito, text="La lista está vacía.", text_color="#666666")
+            self.lbl_carrito_vacio.pack(pady=20)
+            self.lbl_total_venta.configure(text="Total Venta: $0.00")
+            return
+            
+        for idx, item in enumerate(self.carrito_ventas):
+            subtotal = item['cantidad'] * item['precio_venta']
+            self.total_ventas += subtotal
+            
+            row = ctk.CTkFrame(self.scroll_carrito, fg_color="#1a1a1a", corner_radius=5)
+            row.pack(fill="x", pady=2)
+            
+            lbl_desc = ctk.CTkLabel(row, text=f"{item['nombre']} ({item['referencia']}) x{item['cantidad']}", font=("Arial", 12))
+            lbl_desc.pack(side="left", padx=10, pady=5)
+            
+            lbl_sub = ctk.CTkLabel(row, text=f"${subtotal:,.2f}", font=("Arial", 12, "bold"), text_color="#1DB954")
+            lbl_sub.pack(side="right", padx=10, pady=5)
+            
+            btn_eliminar = ctk.CTkButton(row, text="X", width=25, height=25, fg_color="#ff4d4d", hover_color="#cc0000",
+                                         command=lambda i=idx: self.eliminar_del_carrito(i))
+            btn_eliminar.pack(side="right", padx=5)
+            
+        self.lbl_total_venta.configure(text=f"Total Venta: ${self.total_ventas:,.2f}")
+
+    def eliminar_del_carrito(self, index):
+        if 0 <= index < len(self.carrito_ventas):
+            self.carrito_ventas.pop(index)
+            self.actualizar_carrito_ui()
 
     def procesar_venta(self):
-        # Función en blanco temporalmente para implementar la lógica de ventas después
-        pass
+        if not self.carrito_ventas:
+            return
+            
+        cliente_str = self.combo_cliente.get()
+        if cliente_str == "Seleccione cliente..." or not cliente_str:
+            return
+            
+        cliente_sel = None
+        for c in getattr(self, 'todos_clientes', []):
+            if f"{c['nombre']} {c['apellidos']} ({c['documento']})" == cliente_str:
+                cliente_sel = c
+                break
+                
+        if not cliente_sel:
+            return
+            
+        modal = ctk.CTkToplevel(self)
+        modal.title("Confirmar Venta")
+        modal.geometry("400x380")
+        modal.resizable(False, False)
+        modal.configure(fg_color="#0d0d0d")
+        modal.grab_set()
+        modal.focus()
+        
+        ctk.CTkLabel(modal, text="Confirmar Venta", font=("Arial", 20, "bold"), text_color="#1DB954").pack(pady=(20, 10))
+        ctk.CTkLabel(modal, text=f"Total: ${self.total_ventas:,.2f}", font=("Arial", 16, "bold")).pack(pady=5)
+        
+        ctk.CTkLabel(modal, text="Estado de Pago:", font=("Arial", 12)).pack(anchor="w", padx=30, pady=(5, 2))
+        combo_estado = ctk.CTkComboBox(modal, values=["PAGADO", "PENDIENTE"], width=340)
+        combo_estado.pack(padx=30)
+        combo_estado.set("PAGADO")
+        
+        ctk.CTkLabel(modal, text="Método de Pago (Si es PAGADO):", font=("Arial", 12)).pack(anchor="w", padx=30, pady=(10, 2))
+        
+        try:
+            from database.connection import obtener_saldos_cuentas
+            cuentas = obtener_saldos_cuentas(self.rol)
+            opciones_cuentas = [f"{c['tipo_cuenta']} ({c['num_cuenta']})" for c in cuentas]
+            self._cuentas_pago_map = {f"{c['tipo_cuenta']} ({c['num_cuenta']})": c['idMetodo_de_pago'] for c in cuentas}
+        except Exception:
+            opciones_cuentas = []
+            self._cuentas_pago_map = {}
+            
+        if not opciones_cuentas:
+            opciones_cuentas = ["Sin métodos"]
+            
+        combo_metodo = ctk.CTkComboBox(modal, values=opciones_cuentas, width=340)
+        combo_metodo.pack(padx=30)
+        
+        lbl_estado = ctk.CTkLabel(modal, text="", text_color="#ff4d4d", wraplength=340)
+        lbl_estado.pack(pady=10)
+        
+        btn_confirmar = ctk.CTkButton(modal, text="Confirmar y Registrar", font=("Arial", 14, "bold"), fg_color="#1DB954", hover_color="#179643",
+                                      command=lambda: self.finalizar_venta(modal, cliente_sel, combo_estado.get(), combo_metodo.get(), lbl_estado))
+        btn_confirmar.pack(pady=10)
+        
+    def finalizar_venta(self, modal, cliente, estado_pago, metodo_str, lbl_estado):
+        try:
+            id_metodo = None
+            if estado_pago == "PAGADO":
+                if not getattr(self, '_cuentas_pago_map', {}) or metodo_str not in self._cuentas_pago_map:
+                    lbl_estado.configure(text="Seleccione un método de pago válido para estado PAGADO")
+                    return
+                id_metodo = self._cuentas_pago_map[metodo_str]
+                
+            from database.connection import registrar_venta
+            monto_pagado = self.total_ventas if estado_pago == "PAGADO" else 0.0
+            registrar_venta(
+                id_empleado=self.id_empleado, 
+                id_cliente=cliente['idCliente'], 
+                productos=self.carrito_ventas, 
+                id_metodo_pago=id_metodo, 
+                monto_pagado=monto_pagado, 
+                estado_pago=estado_pago, 
+                valor_total=self.total_ventas, 
+                rol=self.rol
+            )
+            
+            lbl_estado.configure(text="¡Venta registrada con éxito!", text_color="#1DB954")
+            modal.after(1200, modal.destroy)
+            
+            # Limpiar carrito
+            self.carrito_ventas = []
+            self.actualizar_carrito_ui()
+            self.entry_cantidad.delete(0, 'end')
+            self.combo_producto.set("Seleccione producto...")
+            self.combo_cliente.set("Seleccione cliente...")
+            
+            # Actualizar datos de UI que dependan de bd
+            if hasattr(self, 'actualizar_productos_tab'):
+                self.actualizar_productos_tab()
+            if hasattr(self, 'actualizar_combobox_productos'):
+                self.actualizar_combobox_productos()
+            if hasattr(self, 'actualizar_cuentas_tab'):
+                self.actualizar_cuentas_tab()
+                
+        except Exception as e:
+            lbl_estado.configure(text=str(e), text_color="#ff4d4d")
 
     def logout(self):
         # Limpiar los campos de la ventana de login original
