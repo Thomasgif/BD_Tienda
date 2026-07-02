@@ -1,5 +1,6 @@
 import mysql.connector
 from mysql.connector import Error
+from math import isfinite
 
 # ---------------------------------------------------------------------------
 # CONFIGURACIÓN DE ACCESO A LA BASE DE DATOS POR ROL
@@ -288,7 +289,138 @@ def pago_total_venta(idventa, rol):
         if conexion is not None and conexion.is_connected():
             conexion.close()
 
+def pagar_venta_pendiente(id_venta, id_cliente, id_metodo_pago, monto, rol):
+    """
+    Registra un pago (total o parcial) para una venta PENDIENTE.
+    - Inserta el registro en PAGO y actualiza el saldo del método de pago.
+    - Si la suma de pagos >= valor_total de la venta, cambia estado a PAGADO.
+    - Si es un pago parcial, la venta sigue en PENDIENTE.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+
+        monto = float(monto)
+
+        # Bloquear la venta mientras se calcula y registra el nuevo saldo.
+        cursor.execute(
+            "SELECT idCliente, valor_total, estado_pago FROM VENTA WHERE idVenta = %s FOR UPDATE",
+            (id_venta,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise Exception("La venta no existe.")
+        if row['estado_pago'] != 'PENDIENTE':
+            raise Exception("La venta ya no está pendiente.")
+        if row['idCliente'] != id_cliente:
+            raise Exception("La venta no pertenece al cliente seleccionado.")
+        valor_total = float(row['valor_total'])
+
+        # Validar que el monto no supere la deuda pendiente
+        cursor.execute("SELECT COALESCE(SUM(monto), 0) AS pagado FROM PAGO WHERE idVenta = %s", (id_venta,))
+        pagado_row = cursor.fetchone()
+        ya_pagado = float(pagado_row['pagado'])
+        pendiente = valor_total - ya_pagado
+
+        if not isfinite(monto) or monto <= 0:
+            raise Exception("El monto debe ser mayor a cero.")
+        if monto > pendiente:
+            raise Exception(f"El monto ingresado (${monto:,.2f}) supera la deuda pendiente (${pendiente:,.2f}).")
+
+        # Registrar el pago
+        cursor.execute(
+            "INSERT INTO PAGO (idCliente, idVenta, idMetodo_de_pago, monto) VALUES (%s, %s, %s, %s)",
+            (id_cliente, id_venta, id_metodo_pago, monto)
+        )
+
+        # Sumar al saldo del método de pago
+        cursor.execute(
+            "UPDATE METODO_DE_PAGO SET saldo = saldo + %s WHERE idMetodo_de_pago = %s",
+            (monto, id_metodo_pago)
+        )
+
+        # Si con este pago se cubre el total, marcar como PAGADO
+        nuevo_pagado = ya_pagado + monto
+        if nuevo_pagado >= valor_total:
+            cursor.execute(
+                "UPDATE VENTA SET estado_pago = 'PAGADO' WHERE idVenta = %s",
+                (id_venta,)
+            )
+
+        conexion.commit()
+    except Exception as e:
+        if conexion:
+            conexion.rollback()
+        raise Exception(f"{e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+def cancelar_venta(id_venta, rol):
+    """
+    Cancela una venta pendiente:
+    - Cambia estado_pago a 'CANCELADO'
+    - Restaura el inventario (bodega) de cada producto en DETALLE_VENTA
+    Solo se puede cancelar ventas en estado PENDIENTE.
+    """
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor(dictionary=True)
+
+        # Verificar que la venta esté en estado PENDIENTE
+        cursor.execute("SELECT estado_pago FROM VENTA WHERE idVenta = %s", (id_venta,))
+        venta = cursor.fetchone()
+        if not venta:
+            raise Exception("La venta no existe.")
+        if venta['estado_pago'] != 'PENDIENTE':
+            raise Exception(f"Solo se pueden cancelar ventas PENDIENTES. Estado actual: {venta['estado_pago']}")
+
+        cursor.execute(
+            "SELECT COALESCE(SUM(monto), 0) AS pagado FROM PAGO WHERE idVenta = %s",
+            (id_venta,)
+        )
+        if float(cursor.fetchone()['pagado']) > 0:
+            raise Exception(
+                "No se puede cancelar una venta que ya tiene abonos. "
+                "Primero debe gestionarse la devolución del dinero."
+            )
+
+        # Obtener los detalles para restaurar inventario
+        cursor.execute(
+            "SELECT idProducto, cantidad FROM DETALLE_VENTA WHERE idVenta = %s",
+            (id_venta,)
+        )
+        detalles = cursor.fetchall()
+
+        # Restaurar inventario de cada producto
+        for det in detalles:
+            cursor.execute(
+                "UPDATE PRODUCTO SET bodega = bodega + %s WHERE idProducto = %s",
+                (det['cantidad'], det['idProducto'])
+            )
+
+        # Cambiar estado de la venta a CANCELADO
+        cursor.execute(
+            "UPDATE VENTA SET estado_pago = 'CANCELADO' WHERE idVenta = %s",
+            (id_venta,)
+        )
+
+        conexion.commit()
+    except Exception as e:
+        if conexion:
+            conexion.rollback()
+        raise Exception(f"{e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
 def obtener_productos(rol):
+
+
     """
     Obtiene todos los productos de la base de datos.
 
@@ -1118,8 +1250,8 @@ def insertar_compra(id_proveedor, id_empleado, productos, rol):
 def registrar_venta(id_empleado, id_cliente, productos, id_metodo_pago, monto_pagado, estado_pago, valor_total, rol):
     """
     Registra una nueva venta y sus detalles en una transacción.
-    Si se especifica un id_metodo_pago y el estado es PAGADO,
-    también registra el pago y actualiza el saldo del método de pago.
+    Si se recibe un pago total o parcial, registra el abono y actualiza
+    el saldo del método de pago.
     Actualiza el inventario restando las cantidades vendidas.
     
     productos: list[dict] con llaves 'idProducto', 'cantidad'.
@@ -1128,6 +1260,25 @@ def registrar_venta(id_empleado, id_cliente, productos, id_metodo_pago, monto_pa
     cursor = None
     try:
         from database.connection import obtener_conexion
+        valor_total = float(valor_total)
+        monto_pagado = float(monto_pagado)
+        estado_pago = str(estado_pago).upper()
+
+        if not isfinite(valor_total) or not isfinite(monto_pagado):
+            raise Exception("Los valores monetarios no son válidos.")
+        if estado_pago not in ('PAGADO', 'PENDIENTE'):
+            raise Exception("El estado de pago no es válido.")
+        if valor_total <= 0:
+            raise Exception("El total de la venta debe ser mayor a cero.")
+        if monto_pagado < 0 or monto_pagado > valor_total:
+            raise Exception("El abono debe estar entre cero y el total de la venta.")
+        if estado_pago == 'PAGADO' and monto_pagado != valor_total:
+            raise Exception("Una venta PAGADA debe registrar el valor total.")
+        if estado_pago == 'PENDIENTE' and monto_pagado >= valor_total:
+            raise Exception("Una venta PENDIENTE debe conservar un saldo por pagar.")
+        if monto_pagado > 0 and id_metodo_pago is None:
+            raise Exception("Debe seleccionar un método de pago para registrar el abono.")
+
         conexion = obtener_conexion(rol)
         cursor = conexion.cursor()
 
