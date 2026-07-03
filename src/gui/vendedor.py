@@ -754,7 +754,7 @@ class VendedorWindow(ctk.CTkToplevel):
             ctk.CTkButton(
                 row_frame, text="✖ Cancelar", width=85, height=28,
                 font=("Arial", 12, "bold"), fg_color="#5a1a1a", hover_color="#8b0000", text_color="#ff6b6b",
-                command=lambda venta=d, cliente_id=idcli, df_ref=df: self._confirmar_cancelar_venta(venta, cliente_id, df_ref)
+                command=lambda venta=d, cliente_id=idcli, df_ref=df, pagado=ya_pagado: self._confirmar_cancelar_venta(venta, cliente_id, df_ref, pagado)
             ).pack(side="right", padx=(10, 0), pady=5)
 
         
@@ -846,11 +846,23 @@ class VendedorWindow(ctk.CTkToplevel):
             width=200, command=confirmar
         ).pack(pady=5)
 
-    def _confirmar_cancelar_venta(self, venta, id_cliente, df_ref):
+    def _confirmar_cancelar_venta(self, venta, id_cliente, df_ref, ya_pagado=0.0):
         """Abre un modal de confirmación antes de cancelar una venta pendiente."""
         modal = ctk.CTkToplevel(self)
         modal.title("Cancelar Venta")
-        modal.geometry("380x230")
+        
+        if ya_pagado > 0:
+            modal.geometry("420x260")
+            msg = (
+                f"Esta venta tiene un avance/abono de ${ya_pagado:,.2f}.\n\n"
+                "El dinero quedará en la cuenta de la empresa y no se devolverá. "
+                "La venta se cancelará y los productos regresarán al stock.\n\n"
+                "¿Estás seguro de cancelar?"
+            )
+        else:
+            modal.geometry("380x230")
+            msg = f"¿Estás seguro de cancelar la Venta #{venta['idVenta']}?\nEsto restaurará el inventario de los productos."
+
         modal.resizable(False, False)
         modal.configure(fg_color="#0d0d0d")
         modal.grab_set()
@@ -859,8 +871,8 @@ class VendedorWindow(ctk.CTkToplevel):
         ctk.CTkLabel(modal, text="⚠ Cancelar Venta", font=("Arial", 18, "bold"), text_color="#ff6b6b").pack(pady=(20, 5))
         ctk.CTkLabel(
             modal,
-            text=f"¿Estás seguro de cancelar la Venta #{venta['idVenta']}?\nEsto restaurará el inventario de los productos.",
-            font=("Arial", 12), text_color="#cccccc", wraplength=320, justify="center"
+            text=msg,
+            font=("Arial", 12), text_color="#cccccc", wraplength=360, justify="center"
         ).pack(pady=8)
 
         lbl_error = ctk.CTkLabel(modal, text="", text_color="#ff4d4d", wraplength=320)
@@ -879,6 +891,10 @@ class VendedorWindow(ctk.CTkToplevel):
                     self.actualizar_productos_tab()
                 if hasattr(self, 'actualizar_combobox_productos'):
                     self.actualizar_combobox_productos()
+                if hasattr(self, 'actualizar_balance_stats'):
+                    self.actualizar_balance_stats()
+                if hasattr(self, 'actualizar_balance_cuentas'):
+                    self.actualizar_balance_cuentas()
             except Exception as e:
                 lbl_error.configure(text=str(e))
 
