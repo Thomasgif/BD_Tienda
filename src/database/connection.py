@@ -995,7 +995,7 @@ def obtener_resumen_financiero_7dias(rol):
         if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def obtener_cuentas_por_pagar(rol):
+def obtener_cuentas_por_cobrar(rol):
     conexion = None
     cursor = None
     try:
@@ -1003,20 +1003,28 @@ def obtener_cuentas_por_pagar(rol):
         cursor = conexion.cursor(dictionary=True)
         consulta = """
             SELECT 
-                c.idCompra, 
-                c.fechacompra, 
-                p.nombre AS proveedor,
-                COALESCE(SUM(dc.cantidad * prod.precio_compra), 0) AS total_productos,
-                COALESCE(e.valor, 0) AS total_envio,
-                (COALESCE(SUM(dc.cantidad * prod.precio_compra), 0) + COALESCE(e.valor, 0)) AS total_compra,
-                CASE WHEN e.idEnvio IS NULL THEN 'Pendiente Envío' ELSE 'Envío Registrado' END AS estado_envio
-            FROM COMPRA c
-            JOIN PROVEEDOR p ON c.idProveedor = p.idProveedor
-            LEFT JOIN DETALLE_COMPRA dc ON c.idCompra = dc.idCompra
-            LEFT JOIN PRODUCTO prod ON dc.idProducto = prod.idProducto
-            LEFT JOIN ENVIO e ON c.idCompra = e.idCompra
-            GROUP BY c.idCompra, c.fechacompra, p.nombre, e.valor, e.idEnvio
-            ORDER BY c.fechacompra DESC
+                v.idVenta, 
+                v.fecha_venta, 
+                c.nombre AS cliente,
+                (SELECT COALESCE(SUM(dv.cantidad * prod.precio_venta), 0) 
+                    FROM DETALLE_VENTA dv 
+                    JOIN PRODUCTO prod ON dv.idProducto = prod.idProducto 
+                    WHERE dv.idVenta = v.idVenta) AS total_productos,
+                (SELECT COALESCE(SUM(p.monto), 0) 
+                    FROM PAGO p 
+                    WHERE p.idVenta = v.idVenta) AS total_abonado,
+                ((SELECT COALESCE(SUM(dv.cantidad * prod.precio_venta), 0) 
+                    FROM DETALLE_VENTA dv 
+                    JOIN PRODUCTO prod ON dv.idProducto = prod.idProducto 
+                    WHERE dv.idVenta = v.idVenta) 
+                - 
+                (SELECT COALESCE(SUM(p.monto), 0) 
+                    FROM PAGO p 
+                    WHERE p.idVenta = v.idVenta)) AS saldo_pendiente
+            FROM VENTA v
+            JOIN CLIENTE c ON v.idCliente = c.idCliente
+            WHERE v.estado_pago = 'PENDIENTE'
+            ORDER BY v.fecha_venta DESC
         """
         cursor.execute(consulta)
         return cursor.fetchall()

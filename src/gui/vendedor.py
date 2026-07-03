@@ -1998,8 +1998,8 @@ class VendedorWindow(ctk.CTkToplevel):
             w.destroy()
             
         try:
-            from database.connection import obtener_cuentas_por_pagar
-            cuentas = obtener_cuentas_por_pagar(self.rol)
+            from database.connection import obtener_cuentas_por_cobrar
+            cuentas = obtener_cuentas_por_cobrar(self.rol)
         except Exception as e:
             cuentas = []
             print(f"Error al obtener cuentas por pagar: {e}")
@@ -2019,7 +2019,7 @@ class VendedorWindow(ctk.CTkToplevel):
             
         # 3. ENCABEZADOS DE LA TABLA (Fila 0 de la grilla)
         headers_color = "#1e1e1e"
-        cols = ["Compra ID", "Proveedor", "Fecha Compra", "Total Compra", "Estado Envío"]
+        cols = ["Venta ID", "Cliente", "Fecha Venta", "Total Venta", "Abonado", "Saldo Pendiente"]
         for i, col in enumerate(cols):
             ctk.CTkLabel(
                 table_frame, text=col, 
@@ -2033,22 +2033,24 @@ class VendedorWindow(ctk.CTkToplevel):
             bg = "#161616" if idx % 2 == 0 else "#0d0d0d"
             
             # Formateo y validación segura de la fecha
-            fecha = c.get('fechacompra', '')
+            fecha = c.get('fecha_venta', '')
             if hasattr(fecha, 'strftime'):
                 fecha = fecha.strftime('%d/%m/%Y %H:%M')
                 
-            total = float(c.get('total_compra', 0) or 0)
+            total = float(c.get('total_venta', 0) or 0)
+            abonado = float(c.get('total_abonado', 0) or 0)
+            saldo = float(c.get('saldo_pendiente', 0) or 0)
             
-            # Celda 0: Compra ID
+            # Celda 0: Venta ID
             ctk.CTkLabel(
-                table_frame, text=f"#{c['idCompra']}", 
+                table_frame, text=f"#{c['idVenta']}", 
                 font=("Arial", 13, "bold"), text_color="#ffffff",
                 fg_color=bg, anchor="w", padx=10, pady=8
             ).grid(row=row_idx, column=0, sticky="nsew")
             
-            # Celda 1: Proveedor
+            # Celda 1: Cliente
             ctk.CTkLabel(
-                table_frame, text=c['proveedor'], 
+                table_frame, text=c['cliente'], 
                 font=("Arial", 13), text_color="#ffffff",
                 fg_color=bg, anchor="w", padx=10, pady=8
             ).grid(row=row_idx, column=1, sticky="nsew")
@@ -2066,15 +2068,20 @@ class VendedorWindow(ctk.CTkToplevel):
                 font=("Arial", 13, "bold"), text_color="#1DB954",
                 fg_color=bg, anchor="w", padx=10, pady=8
             ).grid(row=row_idx, column=3, sticky="nsew")
-            
-            # Celda 4: Estado Envío (Color dinámico semántico)
-            est = c['estado_envio']
-            est_color = "#1DB954" if est == "Envío Registrado" else "#FFD700"
+
             ctk.CTkLabel(
-                table_frame, text=est, 
-                font=("Arial", 13), text_color=est_color,
+                table_frame, text=f"${abonado:,.2f}", 
+                font=("Arial", 13, "bold"), text_color="#FF8C00",
                 fg_color=bg, anchor="w", padx=10, pady=8
             ).grid(row=row_idx, column=4, sticky="nsew")
+
+            ctk.CTkLabel(
+                table_frame, text=f"${saldo:,.2f}", 
+                font=("Arial", 13, "bold"), text_color="#ff4d4d",
+                fg_color=bg, anchor="w", padx=10, pady=8
+            ).grid(row=row_idx, column=5, sticky="nsew")
+            
+
 
     # ------------------ BALANCE: ESTADÍSTICAS ------------------
     def setup_balance_stats(self, parent):
