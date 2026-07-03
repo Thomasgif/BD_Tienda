@@ -550,11 +550,38 @@ def insertar_envio(idCompra, idEmpleado, fecha, valor, idMetodo_de_pago, rol):
         
         consulta = "INSERT INTO ENVIO (idCompra, idEmpleado, fecha, valor, idMetodo_de_pago) VALUES (%s, %s, %s, %s, %s)"
         cursor.execute(consulta, (idCompra, idEmpleado, fecha, valor, idMetodo_de_pago))
+        
+        # Actualizar stock (bodega) y ajustar precio_compra de los productos comprados
+        # 1. Obtener detalles de la compra (idProducto, cantidad, precio_compra actual)
+        cursor.execute("""
+            SELECT dc.idProducto, dc.cantidad, p.precio_compra
+            FROM DETALLE_COMPRA dc
+            JOIN PRODUCTO p ON dc.idProducto = p.idProducto
+            WHERE dc.idCompra = %s
+        """, (idCompra,))
+        detalles = cursor.fetchall()
+        
+        # 2. Calcular total de unidades
+        total_unidades = sum(d[1] for d in detalles)
+        if total_unidades > 0:
+            costo_envio_por_unidad = float(valor) / total_unidades
+        else:
+            costo_envio_por_unidad = 0.0
+            
+        # 3. Actualizar cada producto
+        for id_prod, cant, precio_act in detalles:
+            nuevo_precio_compra = float(precio_act) + costo_envio_por_unidad
+            cursor.execute("""
+                UPDATE PRODUCTO 
+                SET bodega = bodega + %s, precio_compra = %s 
+                WHERE idProducto = %s
+            """, (cant, nuevo_precio_compra, id_prod))
+            
         conexion.commit()
     except Error as e:
         if conexion:
             conexion.rollback()
-        if e.errno == 3819 or "CONSTRAINT" in str(e).upper():
+        if e.errno == 3819 or "CONSTRAINT" in str(e).upper() or "check constraint" in str(e).lower():
             raise Exception("Saldo insuficiente en la cuenta para realizar el envío.")
         raise Exception(f"Error al registrar el envío: {e}")
     except Exception as e:
@@ -968,7 +995,7 @@ def obtener_resumen_financiero_7dias(rol):
         if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def obtener_cuentas_por_pagar(rol):
+def obtener_cuentas_por_cobrar(rol):
     conexion = None
     cursor = None
     try:
@@ -976,20 +1003,28 @@ def obtener_cuentas_por_pagar(rol):
         cursor = conexion.cursor(dictionary=True)
         consulta = """
             SELECT 
-                c.idCompra, 
-                c.fechacompra, 
-                p.nombre AS proveedor,
-                COALESCE(SUM(dc.cantidad * prod.precio_compra), 0) AS total_productos,
-                COALESCE(e.valor, 0) AS total_envio,
-                (COALESCE(SUM(dc.cantidad * prod.precio_compra), 0) + COALESCE(e.valor, 0)) AS total_compra,
-                CASE WHEN e.idEnvio IS NULL THEN 'Pendiente Envío' ELSE 'Envío Registrado' END AS estado_envio
-            FROM COMPRA c
-            JOIN PROVEEDOR p ON c.idProveedor = p.idProveedor
-            LEFT JOIN DETALLE_COMPRA dc ON c.idCompra = dc.idCompra
-            LEFT JOIN PRODUCTO prod ON dc.idProducto = prod.idProducto
-            LEFT JOIN ENVIO e ON c.idCompra = e.idCompra
-            GROUP BY c.idCompra, c.fechacompra, p.nombre, e.valor, e.idEnvio
-            ORDER BY c.fechacompra DESC
+                v.idVenta, 
+                v.fecha_venta, 
+                c.nombre AS cliente,
+                (SELECT COALESCE(SUM(dv.cantidad * prod.precio_venta), 0) 
+                    FROM DETALLE_VENTA dv 
+                    JOIN PRODUCTO prod ON dv.idProducto = prod.idProducto 
+                    WHERE dv.idVenta = v.idVenta) AS total_productos,
+                (SELECT COALESCE(SUM(p.monto), 0) 
+                    FROM PAGO p 
+                    WHERE p.idVenta = v.idVenta) AS total_abonado,
+                ((SELECT COALESCE(SUM(dv.cantidad * prod.precio_venta), 0) 
+                    FROM DETALLE_VENTA dv 
+                    JOIN PRODUCTO prod ON dv.idProducto = prod.idProducto 
+                    WHERE dv.idVenta = v.idVenta) 
+                - 
+                (SELECT COALESCE(SUM(p.monto), 0) 
+                    FROM PAGO p 
+                    WHERE p.idVenta = v.idVenta)) AS saldo_pendiente
+            FROM VENTA v
+            JOIN CLIENTE c ON v.idCliente = c.idCliente
+            WHERE v.estado_pago = 'PENDIENTE'
+            ORDER BY v.fecha_venta DESC
         """
         cursor.execute(consulta)
         return cursor.fetchall()
@@ -1175,19 +1210,52 @@ def obtener_productos_para_compra(rol):
         if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def insertar_compra(id_proveedor, id_empleado, productos, rol):
+def insertar_producto(nombre, referencia, precio_compra, precio_venta, descripcion, rol):
+    """
+    Inserta un nuevo producto en la base de datos con stock (bodega) inicial de 0.
+    Solo accesible para el Gerente (rol = 1).
+    
+    Retorna:
+        int: El idProducto autogenerado.
+    """
+    nombre = nombre.strip()
+    referencia = referencia.strip()
+    descripcion = descripcion.strip()
+    
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        
+        consulta = """
+            INSERT INTO PRODUCTO (nombre, referencia, precio_compra, precio_venta, bodega, descripcion)
+            VALUES (%s, %s, %s, %s, 0, %s)
+        """
+        valores = (nombre, referencia, precio_compra, precio_venta, descripcion)
+        cursor.execute(consulta, valores)
+        conexion.commit()
+        return cursor.lastrowid
+    except Error as e:
+        if e.errno == 1062:
+            raise Exception("El nombre o referencia del producto ya está registrado.")
+        raise Exception(f"Error al registrar producto: {e}")
+    finally:
+        if cursor is not None: cursor.close()
+        if conexion is not None and conexion.is_connected(): conexion.close()
+
+
+def insertar_compra(id_proveedor, id_empleado, productos, id_metodo_pago, total, rol):
     """
     Registra una nueva compra y su detalle en una transacción atómica.
-
-    IMPORTANTE: Esta función NO actualiza el inventario (PRODUCTO.bodega).
-    El inventario se actualiza al confirmar el envío (insertar_envio),
-    distribuyendo el costo del envío entre el total de unidades compradas
-    para ajustar el precio_compra de cada producto.
+    Actualiza el saldo del método de pago de la empresa restando el total de la compra.
 
     Parámetros:
         id_proveedor (int): Proveedor al que se le compra.
         id_empleado  (int): Gerente que registra la compra.
         productos (list[dict]): Lista de {'idProducto': int, 'cantidad': int}.
+        id_metodo_pago (int): Cuenta de la que se debitará el total de la compra.
+        total (float): Costo total acumulado de los productos.
         rol (int): Debe ser 1 (Gerente).
 
     Retorna:
@@ -1199,18 +1267,24 @@ def insertar_compra(id_proveedor, id_empleado, productos, rol):
         conexion = obtener_conexion(rol)
         cursor = conexion.cursor()
 
-        # 1. Cabecera de la compra
+        # 1. Restar del saldo de la cuenta de la empresa
         cursor.execute(
-            "INSERT INTO COMPRA (idEmpleado, idProveedor) VALUES (%s, %s)",
-            (id_empleado, id_proveedor)
+            "UPDATE METODO_DE_PAGO SET saldo = saldo - %s WHERE idMetodo_de_pago = %s",
+            (total, id_metodo_pago)
+        )
+
+        # 2. Cabecera de la compra
+        cursor.execute(
+            "INSERT INTO COMPRA (idEmpleado, idProveedor, idMetodo_de_pago, total) VALUES (%s, %s, %s, %s)",
+            (id_empleado, id_proveedor, id_metodo_pago, total)
         )
         id_compra = cursor.lastrowid
 
-        # 2. Detalle por cada producto
+        # 3. Detalle por cada producto
         for prod in productos:
             cursor.execute(
-                "INSERT INTO DETALLE_COMPRA (idProducto, idCompra, cantidad) VALUES (%s, %s, %s)",
-                (prod['idProducto'], id_compra, prod['cantidad'])
+                "INSERT INTO DETALLE_COMPRA (idProducto, idCompra, cantidad, precio_unit) VALUES (%s, %s, %s, %s)",
+                (prod['idProducto'], id_compra, prod['cantidad'], prod['precio_compra'])
             )
 
         conexion.commit()
@@ -1218,6 +1292,8 @@ def insertar_compra(id_proveedor, id_empleado, productos, rol):
     except Error as e:
         if conexion:
             conexion.rollback()
+        if e.errno == 3819 or "CONSTRAINT" in str(e).upper() or "check constraint" in str(e).lower():
+            raise Exception("Saldo insuficiente en la cuenta para realizar la compra.")
         raise Exception(f"Error al registrar la compra: {e}")
     except Exception as e:
         if conexion:
