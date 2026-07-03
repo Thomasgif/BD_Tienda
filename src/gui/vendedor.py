@@ -2,7 +2,10 @@ import customtkinter as ctk
 from math import isfinite
 import os
 from PIL import Image
-from database.connection import obtener_clientes, obtener_productos, obtener_saldos_cuentas
+from database.connection import (
+    obtener_clientes, obtener_productos, obtener_saldos_cuentas,
+    obtener_ventas_cliente, obtener_detalle_venta, registrar_devolucion_cambio
+)
 
 class VendedorWindow(ctk.CTkToplevel):
     def __init__(self, master=None, nombre_vendedor="Usuario", rol=0, id_empleado=None, *args, **kwargs):
@@ -333,6 +336,22 @@ class VendedorWindow(ctk.CTkToplevel):
         )
         btn_agregar_prod.grid(row=5, column=0, columnspan=2, padx=20, pady=10)
 
+        # Separador para Devoluciones
+        ctk.CTkFrame(form_frame, height=1, fg_color="#333333").grid(row=6, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
+        
+        # Botón Realizar Devolución
+        btn_devolucion = ctk.CTkButton(
+            form_frame, 
+            text="🔄 Devolución / Cambio", 
+            font=("Arial", 14, "bold"),
+            fg_color="#3a1e1e",
+            hover_color="#5e2626",
+            text_color="#ff8888",
+            height=38,
+            command=self.abrir_modal_devolucion
+        )
+        btn_devolucion.grid(row=7, column=0, columnspan=2, padx=20, pady=(10, 20), sticky="ew")
+
         # Separador eliminado (o lo dejamos si es necesario, pero quitamos Forma de Pago)        
         # ---- DERECHA: CARRITO Y TOTAL ----
         lbl_carrito = ctk.CTkLabel(cart_frame, text="Lista de Productos", font=("Arial", 18, "bold"), text_color="#aaaaaa")
@@ -345,10 +364,21 @@ class VendedorWindow(ctk.CTkToplevel):
         # Placeholder del carrito
         self.lbl_carrito_vacio = ctk.CTkLabel(self.scroll_carrito, text="La lista está vacía.", text_color="#666666")
         self.lbl_carrito_vacio.pack(pady=20)
+
+        # Descuento Frame
+        descuento_frame = ctk.CTkFrame(cart_frame, fg_color="transparent")
+        descuento_frame.pack(fill="x", padx=20, pady=(5, 5))
+        
+        lbl_descuento = ctk.CTkLabel(descuento_frame, text="Descuento ($):", font=("Arial", 14, "bold"), text_color="#cccccc")
+        lbl_descuento.pack(side="left")
+        
+        self.entry_descuento = ctk.CTkEntry(descuento_frame, width=120, placeholder_text="Máx 8%")
+        self.entry_descuento.pack(side="right")
+        self.entry_descuento.bind("<KeyRelease>", self.on_descuento_changed)
         
         # Total
         self.lbl_total_venta = ctk.CTkLabel(cart_frame, text="Total Venta: $0.00", font=("Arial", 22, "bold"), text_color="#1DB954")
-        self.lbl_total_venta.pack(padx=20, pady=(10, 20), anchor="e")
+        self.lbl_total_venta.pack(padx=20, pady=(5, 20), anchor="e")
 
         # Botón Registrar
         btn_registrar = ctk.CTkButton(
@@ -1355,6 +1385,8 @@ class VendedorWindow(ctk.CTkToplevel):
             self.lbl_carrito_vacio = ctk.CTkLabel(self.scroll_carrito, text="La lista está vacía.", text_color="#666666")
             self.lbl_carrito_vacio.pack(pady=20)
             self.lbl_total_venta.configure(text="Total Venta: $0.00")
+            if hasattr(self, 'entry_descuento'):
+                self.on_descuento_changed()
             return
             
         for idx, item in enumerate(self.carrito_ventas):
@@ -1374,7 +1406,46 @@ class VendedorWindow(ctk.CTkToplevel):
                                          command=lambda i=idx: self.eliminar_del_carrito(i))
             btn_eliminar.pack(side="right", padx=5)
             
-        self.lbl_total_venta.configure(text=f"Total Venta: ${self.total_ventas:,.2f}")
+        if hasattr(self, 'entry_descuento'):
+            self.on_descuento_changed()
+        else:
+            self.lbl_total_venta.configure(text=f"Total Venta: ${self.total_ventas:,.2f}")
+
+    def on_descuento_changed(self, event=None):
+        desc_str = self.entry_descuento.get().strip().replace(",", ".")
+        if not desc_str:
+            self.descuento_aplicado = 0.0
+            self.total_final_venta = self.total_ventas
+            self.lbl_total_venta.configure(text=f"Total Venta: ${self.total_ventas:,.2f}", text_color="#1DB954")
+            return
+            
+        try:
+            descuento = float(desc_str)
+            if descuento < 0:
+                self.descuento_aplicado = 0.0
+                self.total_final_venta = self.total_ventas
+                self.lbl_total_venta.configure(text="Descuento inválido (negativo)", text_color="#ff4d4d")
+                return
+            
+            max_descuento = self.total_ventas * 0.08
+            if descuento > max_descuento:
+                self.descuento_aplicado = 0.0
+                self.total_final_venta = self.total_ventas
+                self.lbl_total_venta.configure(
+                    text=f"Descuento excede el 8% (Máx: ${max_descuento:,.2f})", 
+                    text_color="#ff4d4d"
+                )
+            else:
+                self.descuento_aplicado = descuento
+                self.total_final_venta = self.total_ventas - descuento
+                self.lbl_total_venta.configure(
+                    text=f"Total Venta: ${self.total_final_venta:,.2f} (-${descuento:,.2f})", 
+                    text_color="#1DB954"
+                )
+        except ValueError:
+            self.descuento_aplicado = 0.0
+            self.total_final_venta = self.total_ventas
+            self.lbl_total_venta.configure(text="Descuento inválido (no numérico)", text_color="#ff4d4d")
 
     def eliminar_del_carrito(self, index):
         if 0 <= index < len(self.carrito_ventas):
@@ -1397,17 +1468,37 @@ class VendedorWindow(ctk.CTkToplevel):
                 
         if not cliente_sel:
             return
-            
+
+        # Validar descuento
+        descuento = 0.0
+        desc_str = self.entry_descuento.get().strip().replace(",", ".")
+        if desc_str:
+            try:
+                descuento = float(desc_str)
+                if descuento < 0:
+                    return
+                max_descuento = self.total_ventas * 0.08
+                if descuento > max_descuento:
+                    return
+            except ValueError:
+                return
+
+        self.total_final_venta = self.total_ventas - descuento
+        
         modal = ctk.CTkToplevel(self)
         modal.title("Confirmar Venta")
-        modal.geometry("400x455")
+        modal.geometry("400x475")
         modal.resizable(False, False)
         modal.configure(fg_color="#0d0d0d")
         modal.grab_set()
         modal.focus()
         
         ctk.CTkLabel(modal, text="Confirmar Venta", font=("Arial", 20, "bold"), text_color="#1DB954").pack(pady=(20, 10))
-        ctk.CTkLabel(modal, text=f"Total: ${self.total_ventas:,.2f}", font=("Arial", 16, "bold")).pack(pady=5)
+        
+        txt_total = f"Total: ${self.total_final_venta:,.2f}"
+        if descuento > 0:
+            txt_total += f"\n(Subtotal: ${self.total_ventas:,.2f} - Descuento: ${descuento:,.2f})"
+        ctk.CTkLabel(modal, text=txt_total, font=("Arial", 14, "bold"), justify="center").pack(pady=5)
         
         ctk.CTkLabel(modal, text="Estado de Pago:", font=("Arial", 12)).pack(anchor="w", padx=30, pady=(5, 2))
         combo_estado = ctk.CTkComboBox(modal, values=["PAGADO", "PENDIENTE"], width=340)
@@ -1448,7 +1539,7 @@ class VendedorWindow(ctk.CTkToplevel):
             entry_abono.configure(state="normal")
             entry_abono.delete(0, "end")
             if estado == "PAGADO":
-                entry_abono.insert(0, f"{self.total_ventas:.2f}")
+                entry_abono.insert(0, f"{self.total_final_venta:.2f}")
                 entry_abono.configure(state="disabled")
                 lbl_ayuda_abono.configure(text="El pago completo cubre el total de la venta.")
             else:
@@ -1473,9 +1564,10 @@ class VendedorWindow(ctk.CTkToplevel):
         
     def finalizar_venta(self, modal, cliente, estado_pago, metodo_str, monto_str, lbl_estado):
         try:
+            total_venta = getattr(self, 'total_final_venta', self.total_ventas)
             id_metodo = None
             if estado_pago == "PAGADO":
-                monto_pagado = self.total_ventas
+                monto_pagado = total_venta
             else:
                 try:
                     monto_pagado = float(monto_str.strip().replace(",", "."))
@@ -1489,7 +1581,7 @@ class VendedorWindow(ctk.CTkToplevel):
                 if monto_pagado < 0:
                     lbl_estado.configure(text="El abono no puede ser negativo.")
                     return
-                if monto_pagado >= self.total_ventas:
+                if monto_pagado >= total_venta:
                     lbl_estado.configure(
                         text="Para pagar el total, seleccione el estado PAGADO."
                     )
@@ -1509,7 +1601,7 @@ class VendedorWindow(ctk.CTkToplevel):
                 id_metodo_pago=id_metodo, 
                 monto_pagado=monto_pagado, 
                 estado_pago=estado_pago, 
-                valor_total=self.total_ventas, 
+                valor_total=total_venta, 
                 rol=self.rol
             )
             
@@ -1518,6 +1610,7 @@ class VendedorWindow(ctk.CTkToplevel):
             
             # Limpiar carrito
             self.carrito_ventas = []
+            self.entry_descuento.delete(0, 'end')
             self.actualizar_carrito_ui()
             self.entry_cantidad.delete(0, 'end')
             self.combo_producto.set("Seleccione producto...")
@@ -1546,6 +1639,515 @@ class VendedorWindow(ctk.CTkToplevel):
         
         # Destruir esta ventana del vendedor
         self.destroy()
+
+    def abrir_modal_devolucion(self):
+        modal = ctk.CTkToplevel(self)
+        modal.title("Realizar Devolución y Cambio")
+        modal.geometry("900x720")
+        modal.resizable(True, True)
+        modal.configure(fg_color="#0d0d0d")
+        modal.grab_set()
+        modal.focus()
+
+        # Variables locales del modal
+        self.dev_cliente_sel = None
+        self.dev_venta_sel = None
+        self.dev_producto_marcado = None
+        self.dev_reemplazos = []
+        self.dev_ventas_cliente = []
+        self.dev_productos_venta = []
+
+        # Título
+        ctk.CTkLabel(
+            modal, 
+            text="🔄 Devolución y Cambio de Productos", 
+            font=("Arial", 22, "bold"), 
+            text_color="#ff6b6b"
+        ).pack(pady=(20, 10))
+
+        # --- PANEL SUPERIOR: FILTROS ---
+        filter_frame = ctk.CTkFrame(modal, fg_color="#121212", corner_radius=10)
+        filter_frame.pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkLabel(filter_frame, text="Cliente:", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=15, pady=15, sticky="w")
+        
+        opciones_clientes = ["Seleccione cliente..."]
+        for c in getattr(self, 'todos_clientes', []):
+            opciones_clientes.append(f"{c['nombre']} {c['apellidos']} ({c['documento']})")
+            
+        combo_cliente_dev = ctk.CTkComboBox(filter_frame, values=opciones_clientes, width=280)
+        combo_cliente_dev.grid(row=0, column=1, padx=10, pady=15, sticky="w")
+        
+        ctk.CTkLabel(filter_frame, text="Venta asociada:", font=("Arial", 12, "bold")).grid(row=0, column=2, padx=15, pady=15, sticky="w")
+        
+        combo_venta_dev = ctk.CTkComboBox(filter_frame, values=["Seleccione venta..."], width=300, state="disabled")
+        combo_venta_dev.grid(row=0, column=3, padx=10, pady=15, sticky="w")
+
+        # --- CUERPO: DOS COLUMNAS ---
+        body_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        body_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        body_frame.grid_columnconfigure(0, weight=1)
+        body_frame.grid_columnconfigure(1, weight=1)
+        body_frame.grid_rowconfigure(0, weight=1)
+
+        # Columna Izquierda: Artículos de la venta
+        left_col = ctk.CTkFrame(body_frame, fg_color="#0a0a0a", corner_radius=10)
+        left_col.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="nsew")
+        
+        ctk.CTkLabel(left_col, text="1. Artículos Vendidos", font=("Arial", 14, "bold"), text_color="#aaaaaa").pack(pady=5)
+        
+        scroll_articulos_venta = ctk.CTkScrollableFrame(left_col, fg_color="#121212", corner_radius=8, height=220)
+        scroll_articulos_venta.pack(fill="both", expand=True, padx=15, pady=(5, 10))
+
+        # Panel de marcación del producto
+        panel_marcacion = ctk.CTkFrame(left_col, fg_color="#121212", corner_radius=8)
+        panel_marcacion.pack(fill="x", padx=15, pady=(0, 15))
+        
+        lbl_prod_marcado = ctk.CTkLabel(panel_marcacion, text="Ningún artículo marcado para devolución", font=("Arial", 12, "italic"), text_color="#888888")
+        lbl_prod_marcado.pack(anchor="w", padx=15, pady=8)
+        
+        cant_dev_frame = ctk.CTkFrame(panel_marcacion, fg_color="transparent")
+        cant_dev_frame.pack(fill="x", padx=15, pady=(0, 10))
+        ctk.CTkLabel(cant_dev_frame, text="Cant. a devolver:", font=("Arial", 12)).pack(side="left")
+        
+        entry_cant_dev = ctk.CTkEntry(cant_dev_frame, width=70, placeholder_text="1")
+        entry_cant_dev.pack(side="left", padx=10)
+        entry_cant_dev.configure(state="disabled")
+
+        # Columna Derecha: Reemplazo
+        right_col = ctk.CTkFrame(body_frame, fg_color="#0a0a0a", corner_radius=10)
+        right_col.grid(row=0, column=1, padx=(10, 0), pady=0, sticky="nsew")
+        
+        ctk.CTkLabel(right_col, text="2. Artículos de Reemplazo", font=("Arial", 14, "bold"), text_color="#aaaaaa").pack(pady=5)
+
+        # Formulario de agregar reemplazo
+        form_reemplazo = ctk.CTkFrame(right_col, fg_color="#121212", corner_radius=8)
+        form_reemplazo.pack(fill="x", padx=15, pady=5)
+        
+        opciones_prod_reemplazo = ["Seleccione producto..."]
+        for p in getattr(self, 'todos_productos', []):
+            opciones_prod_reemplazo.append(f"{p['nombre']} ({p['referencia']})")
+            
+        combo_prod_reemp = ctk.CTkComboBox(form_reemplazo, values=opciones_prod_reemplazo, width=220)
+        combo_prod_reemp.pack(side="left", padx=5, pady=10)
+        combo_prod_reemp.set("Seleccione producto...")
+        
+        entry_cant_reemp = ctk.CTkEntry(form_reemplazo, width=60, placeholder_text="Cant")
+        entry_cant_reemp.pack(side="left", padx=5, pady=10)
+        
+        btn_add_reemp = ctk.CTkButton(
+            form_reemplazo, text="+", width=40, font=("Arial", 14, "bold"),
+            command=lambda: agregar_reemplazo()
+        )
+        btn_add_reemp.pack(side="left", padx=5, pady=10)
+
+        # Lista de reemplazos
+        scroll_reemplazos = ctk.CTkScrollableFrame(right_col, fg_color="#121212", corner_radius=8, height=180)
+        scroll_reemplazos.pack(fill="both", expand=True, padx=15, pady=(5, 15))
+
+        # --- PANEL INFERIOR: RESUMEN Y CONFIRMACIÓN ---
+        bottom_frame = ctk.CTkFrame(modal, fg_color="#121212", corner_radius=10)
+        bottom_frame.pack(fill="x", padx=20, pady=(5, 20))
+        
+        totales_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+        totales_frame.pack(fill="x", padx=20, pady=12)
+        
+        lbl_resumen_dev = ctk.CTkLabel(
+            totales_frame, 
+            text="Valor devolución: $0.00  |  Valor reemplazo: $0.00", 
+            font=("Arial", 14, "bold"),
+            text_color="#cccccc"
+        )
+        lbl_resumen_dev.pack(side="left")
+        
+        lbl_balance = ctk.CTkLabel(
+            totales_frame, 
+            text="Balance: $0.00", 
+            font=("Arial", 15, "bold"), 
+            text_color="#888888"
+        )
+        lbl_balance.pack(side="right")
+
+        # Pago de valor adicional
+        pago_adicional_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+        pago_adicional_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        ctk.CTkLabel(pago_adicional_frame, text="Cuenta para recibir excedente:", font=("Arial", 12, "bold")).pack(side="left", padx=(0, 10))
+        
+        try:
+            from database.connection import obtener_saldos_cuentas
+            cuentas = obtener_saldos_cuentas(self.rol)
+            opciones_cuentas = [f"{c['tipo_cuenta']} ({c['num_cuenta']})" for c in cuentas]
+            self._cuentas_dev_map = {f"{c['tipo_cuenta']} ({c['num_cuenta']})": c['idMetodo_de_pago'] for c in cuentas}
+        except Exception:
+            opciones_cuentas = []
+            self._cuentas_dev_map = {}
+            
+        if not opciones_cuentas:
+            opciones_cuentas = ["Sin métodos"]
+            
+        combo_metodo_dev = ctk.CTkComboBox(pago_adicional_frame, values=opciones_cuentas, width=250)
+        combo_metodo_dev.pack(side="left")
+        
+        # Ocultar excedente por defecto
+        pago_adicional_frame.pack_forget()
+
+        lbl_status = ctk.CTkLabel(bottom_frame, text="", font=("Arial", 12), text_color="#ff4d4d", wraplength=800)
+        lbl_status.pack(pady=5)
+
+        btn_confirmar = ctk.CTkButton(
+            bottom_frame, 
+            text="Confirmar Devolución y Cambio", 
+            font=("Arial", 16, "bold"),
+            fg_color="#ff6b6b", 
+            hover_color="#cc4444", 
+            text_color="#000000", 
+            height=45,
+            command=lambda: ejecutar_devolucion()
+        )
+        btn_confirmar.pack(fill="x", padx=20, pady=(0, 20))
+
+        # --- DEFINICIONES DE MÉTODOS INTERNOS / CALLBACKS ---
+        
+        def on_cliente_selected(val):
+            if val == "Seleccione cliente...":
+                combo_venta_dev.configure(values=["Seleccione venta..."], state="disabled")
+                combo_venta_dev.set("Seleccione venta...")
+                limpiar_seccion_articulos()
+                return
+                
+            self.dev_cliente_sel = None
+            for c in getattr(self, 'todos_clientes', []):
+                if f"{c['nombre']} {c['apellidos']} ({c['documento']})" == val:
+                    self.dev_cliente_sel = c
+                    break
+                    
+            if not self.dev_cliente_sel:
+                return
+                
+            try:
+                self.dev_ventas_cliente = obtener_ventas_cliente(self.dev_cliente_sel['idCliente'], self.rol)
+                if not self.dev_ventas_cliente:
+                    combo_venta_dev.configure(values=["Sin ventas registradas"], state="disabled")
+                    combo_venta_dev.set("Sin ventas registradas")
+                    limpiar_seccion_articulos()
+                    return
+                    
+                opciones_ventas = []
+                for v in self.dev_ventas_cliente:
+                    opciones_ventas.append(f"Venta #{v['idVenta']} - {v['fecha_venta']} (${float(v['valor_total']):,.2f}) [{v['estado_pago']}]")
+                    
+                combo_venta_dev.configure(values=opciones_ventas, state="normal")
+                combo_venta_dev.set("Seleccione venta...")
+                limpiar_seccion_articulos()
+            except Exception as ex:
+                lbl_status.configure(text=f"Error al obtener ventas: {ex}", text_color="#ff4d4d")
+
+        def on_venta_selected(val):
+            if val in ["Seleccione venta...", "Sin ventas registradas"]:
+                limpiar_seccion_articulos()
+                return
+                
+            try:
+                partes = val.split(" - ")
+                id_venta_str = partes[0].replace("Venta #", "")
+                id_venta = int(id_venta_str)
+            except Exception:
+                return
+                
+            self.dev_venta_sel = None
+            for v in self.dev_ventas_cliente:
+                if v['idVenta'] == id_venta:
+                    self.dev_venta_sel = v
+                    break
+                    
+            if not self.dev_venta_sel:
+                return
+                
+            try:
+                self.dev_productos_venta = obtener_detalle_venta(id_venta, self.rol)
+                render_articulos_venta()
+                self.dev_producto_marcado = None
+                lbl_prod_marcado.configure(text="Ningún artículo marcado para devolución", font=("Arial", 12, "italic"), text_color="#888888")
+                entry_cant_dev.configure(state="normal")
+                entry_cant_dev.delete(0, 'end')
+                entry_cant_dev.configure(state="disabled")
+                self.dev_reemplazos = []
+                render_reemplazos()
+                recalcular_totales_devolucion()
+            except Exception as ex:
+                lbl_status.configure(text=f"Error al obtener artículos de la venta: {ex}", text_color="#ff4d4d")
+
+        def limpiar_seccion_articulos():
+            self.dev_venta_sel = None
+            self.dev_producto_marcado = None
+            self.dev_reemplazos = []
+            for w in scroll_articulos_venta.winfo_children():
+                w.destroy()
+            lbl_prod_marcado.configure(text="Ningún artículo marcado para devolución", font=("Arial", 12, "italic"), text_color="#888888")
+            entry_cant_dev.configure(state="normal")
+            entry_cant_dev.delete(0, 'end')
+            entry_cant_dev.configure(state="disabled")
+            render_reemplazos()
+            recalcular_totales_devolucion()
+
+        def render_articulos_venta():
+            for w in scroll_articulos_venta.winfo_children():
+                w.destroy()
+                
+            if not self.dev_productos_venta:
+                ctk.CTkLabel(scroll_articulos_venta, text="No hay artículos en esta venta.", text_color="#666666").pack(pady=10)
+                return
+                
+            for p in self.dev_productos_venta:
+                row = ctk.CTkFrame(scroll_articulos_venta, fg_color="#181818", corner_radius=5)
+                row.pack(fill="x", pady=2, padx=2)
+                
+                lbl_txt = f"{p['nombre']} ({p['referencia']})\nCant vendida: {p['cantidad']} | Precio: ${float(p['precio_venta']):,.2f}"
+                ctk.CTkLabel(row, text=lbl_txt, font=("Arial", 11), justify="left").pack(side="left", padx=10, pady=5)
+                
+                btn_marcar = ctk.CTkButton(
+                    row, text="Marcar", font=("Arial", 11, "bold"), width=60, height=25,
+                    fg_color="#333333", hover_color="#555555",
+                    command=lambda prod=p: marcar_producto(prod)
+                )
+                btn_marcar.pack(side="right", padx=10)
+
+        def marcar_producto(prod):
+            self.dev_producto_marcado = prod
+            lbl_prod_marcado.configure(
+                text=f"MARCADO: {prod['nombre']} ({prod['referencia']})\nPrecio unitario: ${float(prod['precio_venta']):,.2f} | Max disponible: {prod['cantidad']}",
+                font=("Arial", 12, "bold"),
+                text_color="#ff6b6b"
+            )
+            entry_cant_dev.configure(state="normal")
+            entry_cant_dev.delete(0, 'end')
+            entry_cant_dev.insert(0, "1")
+            recalcular_totales_devolucion()
+
+        def entry_cant_dev_changed(event=None):
+            recalcular_totales_devolucion()
+            
+        entry_cant_dev.bind("<KeyRelease>", entry_cant_dev_changed)
+
+        def agregar_reemplazo():
+            if not self.dev_producto_marcado:
+                lbl_status.configure(text="Primero debe marcar un artículo vendido para devolución.", text_color="#ff4d4d")
+                return
+                
+            prod_str = combo_prod_reemp.get()
+            if prod_str == "Seleccione producto...":
+                lbl_status.configure(text="Seleccione un producto de reemplazo.", text_color="#ff4d4d")
+                return
+                
+            cant_str = entry_cant_reemp.get().strip()
+            if not cant_str:
+                lbl_status.configure(text="Ingrese la cantidad de reemplazo.", text_color="#ff4d4d")
+                return
+                
+            try:
+                cantidad = int(cant_str)
+                if cantidad <= 0:
+                    lbl_status.configure(text="La cantidad debe ser un entero positivo.", text_color="#ff4d4d")
+                    return
+            except ValueError:
+                lbl_status.configure(text="Cantidad de reemplazo inválida.", text_color="#ff4d4d")
+                return
+
+            prod_sel = None
+            for p in getattr(self, 'todos_productos', []):
+                if f"{p['nombre']} ({p['referencia']})" == prod_str:
+                    prod_sel = p
+                    break
+                    
+            if not prod_sel:
+                return
+
+            bodega = int(prod_sel.get('bodega', 0) or 0)
+            
+            cant_devuelta_temp = 0
+            try:
+                cant_devuelta_temp = int(entry_cant_dev.get().strip())
+            except ValueError:
+                pass
+                
+            stock_disponible = bodega
+            if prod_sel['idProducto'] == self.dev_producto_marcado['idProducto']:
+                stock_disponible += cant_devuelta_temp
+
+            cant_ya_agregada = sum(item['cantidad'] for item in self.dev_reemplazos if item['idProducto'] == prod_sel['idProducto'])
+            if cantidad + cant_ya_agregada > stock_disponible:
+                lbl_status.configure(
+                    text=f"Stock insuficiente para '{prod_sel['nombre']}'. Disponible: {stock_disponible} (En bodega: {bodega})", 
+                    text_color="#ff4d4d"
+                )
+                return
+
+            encontrado = False
+            for item in self.dev_reemplazos:
+                if item['idProducto'] == prod_sel['idProducto']:
+                    item['cantidad'] += cantidad
+                    encontrado = True
+                    break
+                    
+            if not encontrado:
+                self.dev_reemplazos.append({
+                    'idProducto': prod_sel['idProducto'],
+                    'nombre': prod_sel['nombre'],
+                    'referencia': prod_sel['referencia'],
+                    'precio_venta': float(prod_sel['precio_venta']),
+                    'cantidad': cantidad
+                })
+                
+            entry_cant_reemp.delete(0, 'end')
+            combo_prod_reemp.set("Seleccione producto...")
+            lbl_status.configure(text="")
+            render_reemplazos()
+            recalcular_totales_devolucion()
+
+        def render_reemplazos():
+            for w in scroll_reemplazos.winfo_children():
+                w.destroy()
+                
+            if not self.dev_reemplazos:
+                ctk.CTkLabel(scroll_reemplazos, text="No hay artículos de reemplazo.", text_color="#666666").pack(pady=10)
+                return
+                
+            for idx, item in enumerate(self.dev_reemplazos):
+                row = ctk.CTkFrame(scroll_reemplazos, fg_color="#181818", corner_radius=5)
+                row.pack(fill="x", pady=2, padx=2)
+                
+                subt = item['cantidad'] * item['precio_venta']
+                lbl_txt = f"{item['nombre']} ({item['referencia']})\nCant: {item['cantidad']} x ${item['precio_venta']:,.2f} = ${subt:,.2f}"
+                ctk.CTkLabel(row, text=lbl_txt, font=("Arial", 11), justify="left").pack(side="left", padx=10, pady=5)
+                
+                btn_del = ctk.CTkButton(
+                    row, text="Eliminar", font=("Arial", 11, "bold"), width=60, height=25,
+                    fg_color="#ff4d4d", hover_color="#cc0000",
+                    command=lambda index=idx: eliminar_reemplazo(index)
+                )
+                btn_del.pack(side="right", padx=10)
+
+        def eliminar_reemplazo(idx):
+            if 0 <= idx < len(self.dev_reemplazos):
+                self.dev_reemplazos.pop(idx)
+                render_reemplazos()
+                recalcular_totales_devolucion()
+
+        def recalcular_totales_devolucion():
+            if not self.dev_producto_marcado:
+                lbl_resumen_dev.configure(text="Valor devolución: $0.00  |  Valor reemplazo: $0.00")
+                lbl_balance.configure(text="Balance: $0.00", text_color="#888888")
+                pago_adicional_frame.pack_forget()
+                return
+                
+            cant_dev_str = entry_cant_dev.get().strip()
+            if not cant_dev_str:
+                lbl_resumen_dev.configure(text="Valor devolución: $0.00  |  Valor reemplazo: $0.00")
+                lbl_balance.configure(text="Balance: $0.00", text_color="#888888")
+                pago_adicional_frame.pack_forget()
+                return
+                
+            try:
+                cant_dev = int(cant_dev_str)
+                if cant_dev <= 0 or cant_dev > int(self.dev_producto_marcado['cantidad']):
+                    lbl_resumen_dev.configure(text="Cantidad inválida")
+                    lbl_balance.configure(text="Balance: --", text_color="#ff4d4d")
+                    pago_adicional_frame.pack_forget()
+                    return
+            except ValueError:
+                lbl_resumen_dev.configure(text="Cantidad inválida")
+                lbl_balance.configure(text="Balance: --", text_color="#ff4d4d")
+                pago_adicional_frame.pack_forget()
+                return
+                
+            valor_dev = cant_dev * float(self.dev_producto_marcado['precio_venta'])
+            valor_reemp = sum(item['cantidad'] * item['precio_venta'] for item in self.dev_reemplazos)
+            
+            balance = valor_reemp - valor_dev
+            
+            lbl_resumen_dev.configure(text=f"Valor devolución: ${valor_dev:,.2f}  |  Valor reemplazo: ${valor_reemp:,.2f}")
+            
+            if round(balance, 2) < 0:
+                lbl_balance.configure(text=f"Falta cubrir: ${abs(balance):,.2f}", text_color="#ff4d4d")
+                pago_adicional_frame.pack_forget()
+            elif round(balance, 2) == 0:
+                lbl_balance.configure(text="Balance cubierto: $0.00", text_color="#1DB954")
+                pago_adicional_frame.pack_forget()
+            else:
+                lbl_balance.configure(text=f"Exceso/Adicional: ${balance:,.2f}", text_color="#1DB954")
+                pago_adicional_frame.pack(fill="x", padx=20, pady=(0, 10))
+
+        def ejecutar_devolucion():
+            lbl_status.configure(text="")
+            
+            if not self.dev_cliente_sel:
+                lbl_status.configure(text="Debe seleccionar un cliente.", text_color="#ff4d4d")
+                return
+                
+            if not self.dev_venta_sel:
+                lbl_status.configure(text="Debe seleccionar la venta asociada.", text_color="#ff4d4d")
+                return
+                
+            if not self.dev_producto_marcado:
+                lbl_status.configure(text="Debe marcar un artículo para devolución.", text_color="#ff4d4d")
+                return
+                
+            cant_dev_str = entry_cant_dev.get().strip()
+            try:
+                cant_dev = int(cant_dev_str)
+                if cant_dev <= 0 or cant_dev > int(self.dev_producto_marcado['cantidad']):
+                    lbl_status.configure(text=f"Cantidad a devolver inválida (Máx: {self.dev_producto_marcado['cantidad']})", text_color="#ff4d4d")
+                    return
+            except ValueError:
+                lbl_status.configure(text="Ingrese un número entero para la cantidad a devolver.", text_color="#ff4d4d")
+                return
+                
+            if not self.dev_reemplazos:
+                lbl_status.configure(text="Debe agregar al menos un artículo de reemplazo.", text_color="#ff4d4d")
+                return
+
+            valor_dev = cant_dev * float(self.dev_producto_marcado['precio_venta'])
+            valor_reemp = sum(item['cantidad'] * item['precio_venta'] for item in self.dev_reemplazos)
+            balance = valor_reemp - valor_dev
+            
+            if round(balance, 2) < 0:
+                lbl_status.configure(text="El valor total de reemplazo debe ser igual o mayor al valor devuelto. No se devuelve dinero.", text_color="#ff4d4d")
+                return
+                
+            id_metodo = None
+            if round(balance, 2) > 0:
+                metodo_str = combo_metodo_dev.get()
+                if metodo_str not in getattr(self, '_cuentas_dev_map', {}) or not self._cuentas_dev_map:
+                    lbl_status.configure(text="Seleccione un método de pago válido para el saldo adicional.", text_color="#ff4d4d")
+                    return
+                id_metodo = self._cuentas_dev_map[metodo_str]
+
+            try:
+                registrar_devolucion_cambio(
+                    id_venta=self.dev_venta_sel['idVenta'],
+                    id_prod_devuelto=self.dev_producto_marcado['idProducto'],
+                    cant_devuelta=cant_dev,
+                    productos_nuevos=self.dev_reemplazos,
+                    id_metodo_pago=id_metodo,
+                    monto_adicional=balance,
+                    rol=self.rol
+                )
+                
+                lbl_status.configure(text="¡Devolución y cambio procesados con éxito!", text_color="#1DB954")
+                modal.after(1500, modal.destroy)
+                
+                if hasattr(self, 'actualizar_productos_tab'):
+                    self.actualizar_productos_tab()
+                if hasattr(self, 'actualizar_combobox_productos'):
+                    self.actualizar_combobox_productos()
+                if hasattr(self, 'actualizar_cuentas_tab'):
+                    self.actualizar_cuentas_tab()
+            except Exception as ex:
+                lbl_status.configure(text=f"Error en base de datos: {ex}", text_color="#ff4d4d")
+
+        combo_cliente_dev.configure(command=on_cliente_selected)
+        combo_venta_dev.configure(command=on_venta_selected)
 
     # =========================================================================
     # MÓDULO EXCLUSIVO GERENTE — NÓMINA DE EMPLEADOS
