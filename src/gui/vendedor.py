@@ -2655,7 +2655,7 @@ class VendedorWindow(ctk.CTkToplevel):
             if hasattr(fecha, 'strftime'):
                 fecha = fecha.strftime('%d/%m/%Y %H:%M')
                 
-            total = float(c.get('total_venta', 0) or 0)
+            total = float(c.get('total_productos', 0) or 0)
             abonado = float(c.get('total_abonado', 0) or 0)
             saldo = float(c.get('saldo_pendiente', 0) or 0)
             
