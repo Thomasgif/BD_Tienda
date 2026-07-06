@@ -424,7 +424,7 @@ def obtener_productos(rol):
     try:
         conexion = obtener_conexion(rol)
         cursor = conexion.cursor(dictionary=True)
-        cursor.execute("SELECT idProducto, nombre, referencia, precio_venta, bodega, descripcion FROM PRODUCTO")
+        cursor.execute("SELECT idProducto, nombre, referencia, precio_compra, precio_venta, bodega, descripcion FROM PRODUCTO")
         productos = cursor.fetchall()
         return productos
     except Error as e:
@@ -1602,4 +1602,42 @@ def registrar_devolucion_cambio(id_venta, id_prod_devuelto, cant_devuelta, produ
             cursor.close()
         if conexion is not None and conexion.is_connected():
             conexion.close()
+
+
+def actualizar_precio_producto(id_producto, precio_venta, rol):
+    """
+    Actualiza únicamente el precio de venta (valor venta) de un producto.
+    Esta operación está restringida al rol de Gerente (rol = 1).
+    """
+    if rol != 1:
+        raise Exception("Permiso denegado. Solo el gerente puede actualizar precios de venta.")
+    
+    try:
+        precio_venta = float(precio_venta)
+        if precio_venta <= 0 or not isfinite(precio_venta):
+            raise ValueError()
+    except ValueError:
+        raise Exception("El precio de venta debe ser un número positivo válido.")
+
+    conexion = None
+    cursor = None
+    try:
+        conexion = obtener_conexion(rol)
+        cursor = conexion.cursor()
+        
+        consulta = """
+            UPDATE PRODUCTO 
+            SET precio_venta = %s
+            WHERE idProducto = %s
+        """
+        cursor.execute(consulta, (precio_venta, id_producto))
+        conexion.commit()
+    except Error as e:
+        raise Exception(f"Error al actualizar precio del producto: {e}")
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if conexion is not None and conexion.is_connected():
+            conexion.close()
+
 
