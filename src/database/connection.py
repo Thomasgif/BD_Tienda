@@ -331,13 +331,8 @@ def pagar_venta_pendiente(id_venta, id_cliente, id_metodo_pago, monto, rol):
 
         # Registrar el pago
         cursor.execute(
-<<<<<<< HEAD
             "INSERT INTO PAGO (idVenta, idMetodo_de_pago, monto, idCliente) VALUES (%s, %s, %s, %s)",
             (id_venta, id_metodo_pago, monto, id_cliente)
-=======
-            "INSERT INTO PAGO (idCliente, idVenta, idMetodo_de_pago, monto) VALUES (%s, %s, %s, %s)",
-            (id_cliente, id_venta, id_metodo_pago, monto)
->>>>>>> c4a9e0e (Mejoras en vendedor)
         )
 
         # Sumar al saldo del método de pago
