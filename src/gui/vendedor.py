@@ -249,6 +249,8 @@ class VendedorWindow(ctk.CTkToplevel):
         table_frame.grid_columnconfigure(1, weight=2) # Producto (Más ancho)
         table_frame.grid_columnconfigure(2, weight=1) # Precio Venta
         table_frame.grid_columnconfigure(3, weight=1) # Stock
+        if self.rol == 1:
+            table_frame.grid_columnconfigure(4, weight=1) # Acciones (solo gerente)
         
         # 3. ENCABEZADOS (Ocupan la Fila 0 de la grilla única)
         headers_color = "#1e1e1e"
@@ -258,6 +260,8 @@ class VendedorWindow(ctk.CTkToplevel):
         ctk.CTkLabel(table_frame, text="Producto", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=1, sticky="nsew")
         ctk.CTkLabel(table_frame, text="Precio Venta", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=2, sticky="nsew")
         ctk.CTkLabel(table_frame, text="Stock (Bodega)", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=3, sticky="nsew")
+        if self.rol == 1:
+            ctk.CTkLabel(table_frame, text="Acciones", font=("Arial", 14, "bold"), text_color="#1DB954", fg_color=headers_color, anchor="w", padx=10, pady=10).grid(row=0, column=4, sticky="nsew")
         
         # 4. FILAS DE PRODUCTOS (Ocupan las filas consecutivas: idx + 1)
         for idx, prod in enumerate(productos):
@@ -280,6 +284,19 @@ class VendedorWindow(ctk.CTkToplevel):
             stock_text = str(stock) if stock > 0 else "Agotado"
             
             ctk.CTkLabel(table_frame, text=stock_text, text_color=stock_color, fg_color=row_color, anchor="w", padx=10, pady=8).grid(row=row_idx, column=3, sticky="nsew")
+
+            if self.rol == 1:
+                # Frame contenedor para mantener el color cebra y centrar/alinear el botón
+                acc_frame = ctk.CTkFrame(table_frame, fg_color=row_color, corner_radius=0)
+                acc_frame.grid(row=row_idx, column=4, sticky="nsew")
+                
+                btn_editar = ctk.CTkButton(
+                    acc_frame, text="✏ Editar Valor",
+                    font=("Arial", 11, "bold"), width=95, height=24,
+                    fg_color="#1e1e1e", hover_color="#2b2b2b", text_color="#1DB954",
+                    command=lambda p=prod: self._abrir_actualizar_precio_producto(p)
+                )
+                btn_editar.pack(padx=10, pady=5, anchor="w")
     def setup_ventas_tab(self, parent):
         self.carrito_ventas = []
         self.total_ventas = 0.0
@@ -548,6 +565,11 @@ class VendedorWindow(ctk.CTkToplevel):
             self.filtrar_productos()
         except Exception as e:
             print(f"Error al actualizar productos: {e}")
+
+    def _abrir_actualizar_precio_producto(self, prod):
+        from gui.actualizar_precio_producto import ActualizarPrecioProductoWindow
+        win = ActualizarPrecioProductoWindow(self, producto_datos=prod)
+        win.focus()
 
     def actualizar_clientes_tab(self):
         if not hasattr(self, 'scroll_clientes'):
