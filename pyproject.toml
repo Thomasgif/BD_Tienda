@@ -8,4 +8,7 @@ dependencies = [
     "customtkinter>=5.2.2",
     "mysql-connector-python>=9.7.0",
     "pillow>=12.3.0",
+    "psycopg2-binary>=2.9.12",
+    "python-dotenv>=1.2.3",
+    "supabase>=2.31.0",
 ]

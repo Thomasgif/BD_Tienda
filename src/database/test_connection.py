@@ -1,49 +1,80 @@
 import sys
 import os
+import time
+from pathlib import Path
 
-# Agregamos la carpeta 'src' al path de python para que pueda encontrar el módulo 'database'
+# Agregamos la carpeta 'src' al path de python
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from database.connection import obtener_conexion, validar_credenciales
+from database.base import obtener_conexion, liberar_conexion, validar_credenciales
+from database.clientes import obtener_clientes
+from database.productos import obtener_productos
+from database.cuentas import obtener_saldos_cuentas
+
 
 def probar_conexion():
-    print("=== INICIANDO PRUEBA DE CONEXIÓN CON MYSQL ===")
+    print("==========================================================")
+    print("   PRUEBA DE CONEXIÓN Y RENDIMIENTO A SUPABASE (POSTGRES)")
+    print("==========================================================")
+
+    t0 = time.time()
+    conn = None
     try:
-        # Intentar conectar
-        print("Intentando conectar con los parámetros en connection.py...")
+        print("\n1. Conectando al pool de Supabase...")
         conn = obtener_conexion()
-        print("¡CONEXIÓN EXITOSA!")
-        
-        # Validar información de versión del servidor
-        print(f"Versión del Servidor MySQL: {conn.get_server_info()}")
-        
-        # Probar consulta a la tabla EMPLEADO
-        print("\nVerificando si existen empleados cargados en la tabla...")
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT idEmpleado, nombre, documento, correo FROM EMPLEADO")
-        empleados = cursor.fetchall()
-        
-        if empleados:
-            print(f"¡Éxito! Se encontraron {len(empleados)} empleado(s) en la base de datos:")
-            for emp in empleados:
-                print(f" - ID: {emp['idEmpleado']} | Nombre: {emp['nombre']} | Documento: {emp['documento']} | Correo: {emp['correo']}")
-        else:
-            print("Conexión exitosa, pero la tabla EMPLEADO está vacía. Recuerda ejecutar el script de Inserts.sql.")
-            
+        t_conn = (time.time() - t0) * 1000
+        print(f"   [OK] Conexión establecida con éxito en {t_conn:.1f} ms.")
+
+        cursor = conn.cursor()
+        cursor.execute("SELECT version();")
+        v = cursor.fetchone()
+        print(f"   [INFO] Servidor PostgreSQL: {v[0] if v else 'N/A'}")
         cursor.close()
-        conn.close()
-        print("\nLa conexión se ha cerrado correctamente.")
-        
+        liberar_conexion(conn)
+        conn = None
+
+        print("\n2. Probando consultas rápidas de catálogo...")
+        t_prod = time.time()
+        productos = obtener_productos()
+        print(f"   [OK] Productos cargados ({len(productos)} items) en {(time.time() - t_prod) * 1000:.1f} ms.")
+
+        t_cli = time.time()
+        clientes = obtener_clientes()
+        print(f"   [OK] Clientes cargados ({len(clientes)} items) en {(time.time() - t_cli) * 1000:.1f} ms.")
+
+        t_cta = time.time()
+        cuentas = obtener_saldos_cuentas()
+        print(f"   [OK] Métodos de pago y saldos ({len(cuentas)} cuentas) en {(time.time() - t_cta) * 1000:.1f} ms.")
+
+        print("\n3. Probando validación de credenciales (Login)...")
+        t_auth = time.time()
+        gerente = validar_credenciales("0315", "0315")
+        if gerente:
+            print(f"   [OK] Login Gerente exitoso: {gerente['nombre']} (Rol={gerente['rol']}) en {(time.time() - t_auth) * 1000:.1f} ms.")
+        else:
+            print("   [AVISO] No se encontró el usuario '0315'. Recuerda ejecutar populate_db.py o Supabase_Seed.sql.")
+
+        print("\n==========================================================")
+        print("   ¡TODAS LAS PRUEBAS DE SUPABASE SE COMPLETARON CON ÉXITO!")
+        print("==========================================================")
+
     except Exception as e:
-        print("\n[ERROR] No se pudo establecer la conexión.")
-        print(f"Detalle del error: {e}")
+        print("\n[ERROR] No se pudo conectar a Supabase:")
+        print(f"Detalle: {e}")
         print("\n--- PASOS DE DIAGNÓSTICO ---")
-        print("1. Verifica que tu servidor local MySQL (XAMPP, WAMP o MySQL Server) esté encendido.")
-        print("2. Abre 'src/database/connection.py' y revisa los datos en 'DB_CONFIG':")
-        print("   - ¿El usuario es 'root'?")
-        print("   - ¿La contraseña está vacía o tiene un valor específico?")
-        print("   - ¿El puerto es 3306?")
-        print("3. Asegúrate de haber ejecutado 'DesarrolloBD.sql' para crear la base de datos 'BD_Tienda'.")
+        print("1. Abre el archivo '.env' en la raíz del proyecto.")
+        print("2. Pega tu cadena de conexión 'DATABASE_URL' de Supabase (Settings -> Database -> Connection URI).")
+        print("3. Si tu contraseña tiene caracteres especiales, asegúrate de que esté codificada en URL o usa los campos individuales:")
+        print("   - SUPABASE_DB_HOST")
+        print("   - SUPABASE_DB_PORT (usualmente 6543 o 5432)")
+        print("   - SUPABASE_DB_USER")
+        print("   - SUPABASE_DB_PASSWORD")
+        print("   - SUPABASE_DB_NAME")
+        print("4. Ejecuta 'Supabase_Schema.sql' en el SQL Editor de tu panel de Supabase si aún no creas las tablas.")
+    finally:
+        if conn:
+            liberar_conexion(conn)
+
 
 if __name__ == "__main__":
     probar_conexion()

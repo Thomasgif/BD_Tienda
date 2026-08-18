@@ -1,244 +1,219 @@
-from mysql.connector import Error
-from database.base import obtener_conexion
+from datetime import date
+from database.base import db_cursor, _convertir_filas, SmartDict
 
 
-def obtener_saldos_cuentas(rol):
-    conexion = None
-    cursor = None
+def obtener_saldos_cuentas(rol=None):
+    """Obtiene los saldos actuales de todas las cuentas y métodos de pago."""
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
-        consulta = """
-            SELECT 
-                idMetodo_de_pago,
-                nombre AS tipo_cuenta, 
-                num_cuenta, 
-                saldo AS saldo_total
-            FROM METODO_DE_PAGO
-        """
-        cursor.execute(consulta)
-        cuentas = cursor.fetchall()
-        return cuentas
-    except Error as e:
+        with db_cursor(commit=False, dictionary=True) as (cursor, _):
+            consulta = """
+                SELECT 
+                    idMetodo_de_pago,
+                    nombre AS tipo_cuenta, 
+                    num_cuenta, 
+                    saldo AS saldo_total
+                FROM METODO_DE_PAGO
+                ORDER BY idMetodo_de_pago
+            """
+            cursor.execute(consulta)
+            cuentas = cursor.fetchall()
+            return _convertir_filas(cuentas) or []
+    except Exception as e:
         raise Exception(f"Error al obtener saldos de cuentas: {e}")
-    finally:
-        if cursor is not None:
-            cursor.close()
-        if conexion is not None and conexion.is_connected():
-            conexion.close()
 
 
-def obtener_gastos(rol):
-    from datetime import date
-    mes = date.today().month
-    conexion = None
-    cursor = None
+def obtener_gastos(rol=None):
+    """Obtiene los gastos del mes actual con la cuenta de procedencia."""
+    hoy = date.today()
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT g.idGasto, g.descripcion, g.monto, g.fecha, m.nombre AS cuenta, m.num_cuenta
-            FROM GASTO g
-            JOIN METODO_DE_PAGO m ON g.idMetodo_de_pago = m.idMetodo_de_pago
-            WHERE MONTH(g.fecha) = %s
-            ORDER BY g.fecha DESC
-        """, (mes,))
-        return cursor.fetchall()
-    except Error as e:
+        with db_cursor(commit=False, dictionary=True) as (cursor, _):
+            cursor.execute("""
+                SELECT g.idGasto, g.descripcion, g.monto, g.fecha, m.nombre AS cuenta, m.num_cuenta
+                FROM GASTO g
+                JOIN METODO_DE_PAGO m ON g.idMetodo_de_pago = m.idMetodo_de_pago
+                WHERE EXTRACT(MONTH FROM g.fecha) = %s AND EXTRACT(YEAR FROM g.fecha) = %s
+                ORDER BY g.fecha DESC
+            """, (hoy.month, hoy.year))
+            gastos = cursor.fetchall()
+            return _convertir_filas(gastos) or []
+    except Exception as e:
         raise Exception(f"Error al obtener gastos: {e}")
-    finally:
-        if cursor is not None: cursor.close()
-        if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def insertar_gasto(id_metodo_pago, descripcion, monto, rol):
-    conexion = None
-    cursor = None
+def insertar_gasto(id_metodo_pago, descripcion, monto, rol=None):
+    """Registra un nuevo gasto descontando del saldo de la cuenta indicada."""
+    monto = float(monto)
+    if monto <= 0:
+        raise Exception("El monto del gasto debe ser mayor a cero.")
+    descripcion = descripcion.strip()
+
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor()
-        
-        # 1. Restar del saldo de la cuenta
-        cursor.execute(
-            "UPDATE METODO_DE_PAGO SET saldo = saldo - %s WHERE idMetodo_de_pago = %s",
-            (monto, id_metodo_pago)
-        )
-        
-        # 2. Insertar el registro del gasto
-        cursor.execute(
-            "INSERT INTO GASTO (idMetodo_de_pago, descripcion, monto) VALUES (%s, %s, %s)",
-            (id_metodo_pago, descripcion, monto)
-        )
-        
-        conexion.commit()
-    except Error as e:
-        if conexion:
-            conexion.rollback()
-        if e.errno == 3819 or "CONSTRAINT" in str(e).upper():
+        with db_cursor(commit=True, dictionary=True) as (cursor, _):
+            # 1. Descontar saldo
+            cursor.execute(
+                "UPDATE METODO_DE_PAGO SET saldo = saldo - %s WHERE idMetodo_de_pago = %s",
+                (monto, id_metodo_pago)
+            )
+            # 2. Registrar gasto
+            cursor.execute(
+                "INSERT INTO GASTO (idMetodo_de_pago, descripcion, monto) VALUES (%s, %s, %s)",
+                (id_metodo_pago, descripcion, monto)
+            )
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "check" in err_msg or "violates" in err_msg or "saldo" in err_msg:
             raise Exception("Saldo insuficiente en la cuenta para registrar este gasto.")
         raise Exception(f"Error al registrar gasto: {e}")
-    finally:
-        if cursor is not None: cursor.close()
-        if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def obtener_resumen_financiero_7dias(rol):
-    from datetime import date, timedelta
-    conexion = None
-    cursor = None
+def obtener_resumen_financiero_7dias(rol=None):
+    """
+    Obtiene el resumen financiero de los últimos 7 días en UNA SOLA consulta consolidada
+    a Supabase, eliminando latencia de peticiones múltiples y calculando saldos históricos.
+    """
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
+        with db_cursor(commit=False, dictionary=True) as (cursor, _):
+            consulta = """
+                WITH 
+                dias AS (
+                    SELECT (CURRENT_DATE - (i || ' day')::interval)::date AS dia
+                    FROM generate_series(6, 0, -1) AS i
+                ),
+                tot_saldo AS (
+                    SELECT COALESCE(SUM(saldo), 0) AS saldo_actual FROM METODO_DE_PAGO
+                ),
+                gastos_agg AS (
+                    SELECT fecha::date AS dia, SUM(monto) AS total
+                    FROM GASTO
+                    WHERE fecha::date >= CURRENT_DATE - 6 AND fecha::date <= CURRENT_DATE
+                    GROUP BY fecha::date
+                ),
+                envios_agg AS (
+                    SELECT fecha AS dia, SUM(valor) AS total
+                    FROM ENVIO
+                    WHERE fecha >= CURRENT_DATE - 6 AND fecha <= CURRENT_DATE
+                    GROUP BY fecha
+                ),
+                nomina_agg AS (
+                    SELECT fecha_pago::date AS dia, SUM(monto) AS total
+                    FROM PAGO_EMPLEADO
+                    WHERE fecha_pago::date >= CURRENT_DATE - 6 AND fecha_pago::date <= CURRENT_DATE
+                    GROUP BY fecha_pago::date
+                ),
+                compras_agg AS (
+                    SELECT fechacompra::date AS dia, SUM(total) AS total
+                    FROM COMPRA
+                    WHERE fechacompra::date >= CURRENT_DATE - 6 AND fechacompra::date <= CURRENT_DATE
+                    GROUP BY fechacompra::date
+                ),
+                cxc_agg AS (
+                    SELECT fecha_venta::date AS dia, SUM(valor_total) AS total
+                    FROM VENTA
+                    WHERE estado_pago = 'PENDIENTE' 
+                      AND fecha_venta::date >= CURRENT_DATE - 6 
+                      AND fecha_venta::date <= CURRENT_DATE
+                    GROUP BY fecha_venta::date
+                ),
+                abonos_agg AS (
+                    SELECT fecha_pago::date AS dia, SUM(monto) AS total
+                    FROM PAGO
+                    WHERE fecha_pago::date >= CURRENT_DATE - 6 
+                      AND fecha_pago::date <= CURRENT_DATE
+                    GROUP BY fecha_pago::date
+                ),
+                ventas_agg AS (
+                    SELECT fecha_venta::date AS dia, SUM(valor_total) AS total
+                    FROM VENTA
+                    WHERE fecha_venta::date >= CURRENT_DATE - 6 
+                      AND fecha_venta::date <= CURRENT_DATE
+                    GROUP BY fecha_venta::date
+                )
+                SELECT 
+                    d.dia,
+                    (SELECT saldo_actual FROM tot_saldo) AS saldo_actual,
+                    COALESCE(g.total, 0) AS gasto,
+                    (COALESCE(e.total, 0) + COALESCE(n.total, 0) + COALESCE(c.total, 0)) AS costo,
+                    COALESCE(cxc.total, 0) AS cxc,
+                    COALESCE(a.total, 0) AS abono,
+                    COALESCE(v.total, 0) AS venta_total
+                FROM dias d
+                LEFT JOIN gastos_agg g ON d.dia = g.dia
+                LEFT JOIN envios_agg e ON d.dia = e.dia
+                LEFT JOIN nomina_agg n ON d.dia = n.dia
+                LEFT JOIN compras_agg c ON d.dia = c.dia
+                LEFT JOIN cxc_agg cxc ON d.dia = cxc.dia
+                LEFT JOIN abonos_agg a ON d.dia = a.dia
+                LEFT JOIN ventas_agg v ON d.dia = v.dia
+                ORDER BY d.dia ASC;
+            """
+            cursor.execute(consulta)
+            filas = cursor.fetchall()
+            if not filas:
+                return []
 
-        hoy = date.today()
-        hace_7 = hoy - timedelta(days=6)
+            filas_smart = _convertir_filas(filas)
+            saldo_actual = float(filas_smart[-1].get('saldo_actual', 0))
 
-        # 1. Saldo ACTUAL total (sumamos todos los métodos de pago)
-        cursor.execute("SELECT COALESCE(SUM(saldo), 0) AS saldo_actual FROM METODO_DE_PAGO")
-        saldo_actual = float(cursor.fetchone()['saldo_actual'])
+            # Calcular saldo_fin de cada día de hoy hacia atrás
+            n = len(filas_smart)
+            saldo_fin = {}
+            if n > 0:
+                saldo_fin[n - 1] = saldo_actual
+                for i in range(n - 1, 0, -1):
+                    row = filas_smart[i]
+                    g = float(row.get('gasto', 0))
+                    c = float(row.get('costo', 0))
+                    a = float(row.get('abono', 0))
+                    saldo_inicio = saldo_fin[i] + g + c - a
+                    saldo_fin[i - 1] = saldo_inicio
 
-        # 2. Gastos por día (últimos 7 días)
-        cursor.execute("""
-            SELECT DATE(fecha) AS dia, COALESCE(SUM(monto), 0) AS total
-            FROM GASTO
-            WHERE DATE(fecha) BETWEEN %s AND %s
-            GROUP BY DATE(fecha)
-        """, (hace_7, hoy))
-        gastos_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
+            resultado = []
+            for i, row in enumerate(filas_smart):
+                d_str = str(row['dia'])
+                g = float(row.get('gasto', 0))
+                c = float(row.get('costo', 0))
+                a = float(row.get('abono', 0))
+                si = saldo_fin.get(i, 0) + g + c - a
+                resultado.append({
+                    'fecha': d_str,
+                    'saldo_inicial': si,
+                    'gastos': g,
+                    'costos': c,
+                    'cxc': float(row.get('cxc', 0)),
+                    'abonos': a,
+                    'ventas_total': float(row.get('venta_total', 0)),
+                    'saldo_esperado': saldo_fin.get(i, 0),
+                })
 
-        # 3. Costos por día = envíos pagados + pagos de nómina + compras  
-        cursor.execute("""
-            SELECT DATE(fecha) AS dia, COALESCE(SUM(valor), 0) AS total
-            FROM ENVIO
-            WHERE DATE(fecha) BETWEEN %s AND %s
-            GROUP BY DATE(fecha)
-        """, (hace_7, hoy))
-        envios_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
-
-        cursor.execute("""
-            SELECT DATE(fecha_pago) AS dia, COALESCE(SUM(monto), 0) AS total
-            FROM PAGO_EMPLEADO
-            WHERE DATE(fecha_pago) BETWEEN %s AND %s
-            GROUP BY DATE(fecha_pago)
-        """, (hace_7, hoy))
-        nomina_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
-
-        cursor.execute("""
-            SELECT DATE(fechacompra) AS dia, COALESCE(SUM(total), 0) AS total
-            FROM COMPRA
-            WHERE DATE(fechacompra) BETWEEN %s AND %s
-            GROUP BY DATE(fechacompra)
-        """, (hace_7, hoy))
-        compras_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
-
-        # 4. CxC por día: ventas PENDIENTE hechas ese día
-        cursor.execute("""
-            SELECT DATE(fecha_venta) AS dia, COALESCE(SUM(valor_total), 0) AS total
-            FROM VENTA
-            WHERE estado_pago = 'PENDIENTE'
-              AND DATE(fecha_venta) BETWEEN %s AND %s
-            GROUP BY DATE(fecha_venta)
-        """, (hace_7, hoy))
-        cxc_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
-
-        # 5. Abonos por día: pagos recibidos de clientes
-        cursor.execute("""
-            SELECT DATE(fecha_pago) AS dia, COALESCE(SUM(monto), 0) AS total
-            FROM PAGO
-            WHERE DATE(fecha_pago) BETWEEN %s AND %s
-            GROUP BY DATE(fecha_pago)
-        """, (hace_7, hoy))
-        abonos_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
-
-        # 6. Ventas totales por día (todas, sin importar estado de pago)
-        cursor.execute("""
-            SELECT DATE(fecha_venta) AS dia, COALESCE(SUM(valor_total), 0) AS total
-            FROM VENTA
-            WHERE DATE(fecha_venta) BETWEEN %s AND %s
-            GROUP BY DATE(fecha_venta)
-        """, (hace_7, hoy))
-        ventas_map = {str(r['dia']): float(r['total']) for r in cursor.fetchall()}
-
-        dias = []
-        for i in range(7):
-            d = hace_7 + timedelta(days=i)
-            dias.append(str(d))
-
-        # Calcular saldo_fin de cada día, empezando por hoy
-        saldo_fin = {}
-        saldo_fin[dias[6]] = saldo_actual  # hoy
-
-        # De hoy hacia atrás
-        for i in range(6, 0, -1):
-            d = dias[i]
-            g = gastos_map.get(d, 0)
-            c = envios_map.get(d, 0) + nomina_map.get(d, 0) + compras_map.get(d, 0)
-            a = abonos_map.get(d, 0)
-            saldo_inicio_d = saldo_fin[d] + g + c - a
-            saldo_fin[dias[i - 1]] = saldo_inicio_d
-
-        # Armar resultado
-        resultado = []
-        for d in dias:
-            g = gastos_map.get(d, 0)
-            c = envios_map.get(d, 0) + nomina_map.get(d, 0) + compras_map.get(d, 0)
-            a = abonos_map.get(d, 0)
-            si = saldo_fin[d] + g + c - a
-            resultado.append({
-                'fecha': d,
-                'saldo_inicial': si,
-                'gastos': g,
-                'costos': c,
-                'cxc': cxc_map.get(d, 0),
-                'abonos': a,
-                'ventas_total': ventas_map.get(d, 0),
-                'saldo_esperado': saldo_fin[d],
-            })
-
-        return resultado
-
-    except Error as e:
+            return resultado
+    except Exception as e:
         raise Exception(f"Error al obtener resumen financiero: {e}")
-    finally:
-        if cursor is not None: cursor.close()
-        if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def obtener_cuentas_por_cobrar(rol):
-    conexion = None
-    cursor = None
+def obtener_cuentas_por_cobrar(rol=None):
+    """
+    Obtiene todas las cuentas por cobrar (ventas a crédito pendientes)
+    con su total calculado y saldo pendiente en una sola consulta optimizada.
+    """
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
-        consulta = """
-            SELECT 
-                v.idVenta, 
-                v.fecha_venta, 
-                c.nombre AS cliente,
-                (SELECT COALESCE(SUM(dv.cantidad * prod.precio_venta), 0) 
-                    FROM DETALLE_VENTA dv 
-                    JOIN PRODUCTO prod ON dv.idProducto = prod.idProducto 
-                    WHERE dv.idVenta = v.idVenta) AS total_productos,
-                (SELECT COALESCE(SUM(p.monto), 0) 
-                    FROM PAGO p 
-                    WHERE p.idVenta = v.idVenta) AS total_abonado,
-                ((SELECT COALESCE(SUM(dv.cantidad * prod.precio_venta), 0) 
-                    FROM DETALLE_VENTA dv 
-                    JOIN PRODUCTO prod ON dv.idProducto = prod.idProducto 
-                    WHERE dv.idVenta = v.idVenta) 
-                - 
-                (SELECT COALESCE(SUM(p.monto), 0) 
-                    FROM PAGO p 
-                    WHERE p.idVenta = v.idVenta)) AS saldo_pendiente
-            FROM VENTA v
-            JOIN CLIENTE c ON v.idCliente = c.idCliente
-            WHERE v.estado_pago = 'PENDIENTE'
-            ORDER BY v.fecha_venta DESC
-        """
-        cursor.execute(consulta)
-        return cursor.fetchall()
-    except Error as e:
-        raise Exception(f"Error al obtener cuentas por pagar: {e}")
-    finally:
-        if cursor is not None: cursor.close()
-        if conexion is not None and conexion.is_connected(): conexion.close()
+        with db_cursor(commit=False, dictionary=True) as (cursor, _):
+            consulta = """
+                SELECT 
+                    v.idVenta, 
+                    v.fecha_venta, 
+                    c.nombre AS cliente,
+                    v.valor_total AS total_productos,
+                    COALESCE(SUM(p.monto), 0) AS total_abonado,
+                    (v.valor_total - COALESCE(SUM(p.monto), 0)) AS saldo_pendiente
+                FROM VENTA v
+                JOIN CLIENTE c ON v.idCliente = c.idCliente
+                LEFT JOIN PAGO p ON v.idVenta = p.idVenta
+                WHERE v.estado_pago = 'PENDIENTE'
+                GROUP BY v.idVenta, v.fecha_venta, c.nombre, v.valor_total
+                ORDER BY v.fecha_venta DESC
+            """
+            cursor.execute(consulta)
+            cuentas = cursor.fetchall()
+            return _convertir_filas(cuentas) or []
+    except Exception as e:
+        raise Exception(f"Error al obtener cuentas por cobrar: {e}")
