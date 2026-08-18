@@ -26,19 +26,6 @@ CREATE TABLE PRODUCTO (
     CONSTRAINT pk_producto PRIMARY KEY (idProducto)
 );
 
--- 3. CUENTA_EMPRESA
-CREATE TABLE CUENTA_EMPRESA (
-    idCuenta_empresa INT AUTO_INCREMENT NOT NULL,
-    idProveedor INT,
-    referencia VARCHAR(20) NOT NULL,
-    precio_compra DECIMAL(10, 2) NOT NULL CHECK (precio_compra >= 0),
-    precio_venta DECIMAL(10, 2) NOT NULL CHECK (precio_venta >= 0),
-    bodega INT UNSIGNED DEFAULT 0,
-    descripcion VARCHAR(128) NOT NULL,
-    CONSTRAINT pk_cuenta_empresa PRIMARY KEY (idCuenta_empresa),
-    FOREIGN KEY (idProveedor) REFERENCES PROVEEDOR (idProveedor)
-);
-
 -- 4. EMPLEADO
 CREATE TABLE EMPLEADO (
     idEmpleado INT AUTO_INCREMENT NOT NULL,
