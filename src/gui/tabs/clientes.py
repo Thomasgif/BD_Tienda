@@ -182,8 +182,8 @@ class ClientesTab:
             return
 
         for d in deudas:
-            ya_pagado = pago_total_venta(d['idVenta'], self.controller.rol)
-            pendiente = float(d['valor_total']) - float(ya_pagado)
+            ya_pagado = float(d.get('total_pagado', 0) or 0)
+            pendiente = float(d.get('saldo_pendiente', float(d['valor_total']) - ya_pagado) or 0)
 
             row_frame = ctk.CTkFrame(df, fg_color="#1a1a1a", corner_radius=8)
             row_frame.pack(fill="x", padx=15, pady=3)

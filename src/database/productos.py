@@ -1,75 +1,67 @@
-from mysql.connector import Error
 from math import isfinite
-from database.base import obtener_conexion
+import psycopg2
+from database.base import db_cursor, _convertir_filas
 
 
-def obtener_productos(rol):
-    conexion = None
-    cursor = None
+def obtener_productos(rol=None):
+    """Obtiene el catálogo completo de productos con stock y precios."""
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
-        cursor.execute("SELECT idProducto, nombre, referencia, precio_compra, precio_venta, bodega, descripcion FROM PRODUCTO")
-        productos = cursor.fetchall()
-        return productos
-    except Error as e:
+        with db_cursor(commit=False, dictionary=True) as (cursor, _):
+            cursor.execute("""
+                SELECT idProducto, nombre, referencia, precio_compra, precio_venta, bodega, descripcion 
+                FROM PRODUCTO
+                ORDER BY idProducto
+            """)
+            productos = cursor.fetchall()
+            return _convertir_filas(productos) or []
+    except Exception as e:
         raise Exception(f"Error al obtener productos: {e}")
-    finally:
-        if cursor is not None:
-            cursor.close()
-        if conexion is not None and conexion.is_connected():
-            conexion.close()
 
 
-def obtener_productos_para_compra(rol):
-    conexion = None
-    cursor = None
+def obtener_productos_para_compra(rol=None):
+    """Obtiene productos disponibles para abastecimiento ordenados alfabéticamente."""
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT idProducto, nombre, referencia, precio_compra
-            FROM PRODUCTO
-            ORDER BY nombre
-        """)
-        return cursor.fetchall()
-    except Error as e:
+        with db_cursor(commit=False, dictionary=True) as (cursor, _):
+            cursor.execute("""
+                SELECT idProducto, nombre, referencia, precio_compra
+                FROM PRODUCTO
+                ORDER BY nombre
+            """)
+            productos = cursor.fetchall()
+            return _convertir_filas(productos) or []
+    except Exception as e:
         raise Exception(f"Error al obtener productos para compra: {e}")
-    finally:
-        if cursor is not None: cursor.close()
-        if conexion is not None and conexion.is_connected(): conexion.close()
 
 
-def insertar_producto(nombre, referencia, precio_compra, precio_venta, descripcion, rol):
+def insertar_producto(nombre, referencia, precio_compra, precio_venta, descripcion, rol=None):
+    """Inserta un nuevo producto en el catálogo y devuelve su ID generado."""
     nombre = nombre.strip()
     referencia = referencia.strip()
     descripcion = descripcion.strip()
     
-    conexion = None
-    cursor = None
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor()
-        
-        consulta = """
-            INSERT INTO PRODUCTO (nombre, referencia, precio_compra, precio_venta, bodega, descripcion)
-            VALUES (%s, %s, %s, %s, 0, %s)
-        """
-        valores = (nombre, referencia, precio_compra, precio_venta, descripcion)
-        cursor.execute(consulta, valores)
-        conexion.commit()
-        return cursor.lastrowid
-    except Error as e:
-        if e.errno == 1062:
+        with db_cursor(commit=True, dictionary=True) as (cursor, _):
+            consulta = """
+                INSERT INTO PRODUCTO (nombre, referencia, precio_compra, precio_venta, bodega, descripcion)
+                VALUES (%s, %s, %s, %s, 0, %s)
+                RETURNING idProducto
+            """
+            cursor.execute(consulta, (nombre, referencia, precio_compra, precio_venta, descripcion))
+            nuevo = cursor.fetchone()
+            return nuevo['idproducto'] if nuevo and 'idproducto' in nuevo else (nuevo['idProducto'] if nuevo else None)
+    except psycopg2.IntegrityError as e:
+        if "unique" in str(e).lower():
             raise Exception("El nombre o referencia del producto ya está registrado.")
         raise Exception(f"Error al registrar producto: {e}")
-    finally:
-        if cursor is not None: cursor.close()
-        if conexion is not None and conexion.is_connected(): conexion.close()
+    except Exception as e:
+        if "unique" in str(e).lower():
+            raise Exception("El nombre o referencia del producto ya está registrado.")
+        raise Exception(f"Error al registrar producto: {e}")
 
 
-def actualizar_precio_producto(id_producto, precio_venta, rol):
-    if rol != 1:
+def actualizar_precio_producto(id_producto, precio_venta, rol=None):
+    """Actualiza el precio de venta de un producto (solo permitido a gerente)."""
+    if rol is not None and rol != 1:
         raise Exception("Permiso denegado. Solo el gerente puede actualizar precios de venta.")
     
     try:
@@ -79,23 +71,13 @@ def actualizar_precio_producto(id_producto, precio_venta, rol):
     except ValueError:
         raise Exception("El precio de venta debe ser un número positivo válido.")
 
-    conexion = None
-    cursor = None
     try:
-        conexion = obtener_conexion(rol)
-        cursor = conexion.cursor()
-        
-        consulta = """
-            UPDATE PRODUCTO 
-            SET precio_venta = %s
-            WHERE idProducto = %s
-        """
-        cursor.execute(consulta, (precio_venta, id_producto))
-        conexion.commit()
-    except Error as e:
+        with db_cursor(commit=True, dictionary=True) as (cursor, _):
+            consulta = """
+                UPDATE PRODUCTO 
+                SET precio_venta = %s
+                WHERE idProducto = %s
+            """
+            cursor.execute(consulta, (precio_venta, id_producto))
+    except Exception as e:
         raise Exception(f"Error al actualizar precio del producto: {e}")
-    finally:
-        if cursor is not None:
-            cursor.close()
-        if conexion is not None and conexion.is_connected():
-            conexion.close()
