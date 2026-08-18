@@ -215,12 +215,18 @@ class ProveedoresTab:
 
     def _abrir_nuevo_proveedor(self):
         from gui.nuevo_proveedor import NuevoProveedorWindow
-        NuevoProveedorWindow(self.scroll)
+        NuevoProveedorWindow(self.controller, rol=self.controller.rol, on_success=self.cargar)
 
     def _editar_proveedor(self, proveedor):
         from gui.nuevo_proveedor import NuevoProveedorWindow
-        NuevoProveedorWindow(self.scroll, proveedor_datos=proveedor)
+        NuevoProveedorWindow(self.controller, proveedor_datos=proveedor, rol=self.controller.rol, on_success=self.cargar)
 
     def _abrir_nueva_compra(self, proveedor):
         from gui.nueva_compra import NuevaCompraWindow
-        NuevaCompraWindow(self.scroll, proveedor=proveedor)
+        NuevaCompraWindow(
+            self.controller,
+            proveedor=proveedor,
+            id_empleado=self.controller.id_empleado,
+            rol=self.controller.rol,
+            on_success=lambda: self._mostrar_detalle(proveedor)
+        )

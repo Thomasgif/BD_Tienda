@@ -137,12 +137,32 @@ class NuevaCompraWindow(ctk.CTkToplevel):
       distribuyendo el valor del envío entre el total de unidades.
     """
 
-    def __init__(self, master=None, proveedor=None, *args, **kwargs):
+    def __init__(self, master=None, proveedor=None, id_empleado=None, rol=None, on_success=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
 
-        self.proveedor = proveedor or {}
-        self.rol       = getattr(master, 'rol', 1)
-        self.id_emp    = getattr(master, 'id_empleado', None)
+        self.proveedor  = proveedor or {}
+        self.on_success = on_success
+
+        # Resolver rol con fallbacks
+        if rol is not None:
+            self.rol = rol
+        else:
+            self.rol = getattr(master, 'rol', 1)
+
+        # Resolver id_empleado de forma robusta
+        if id_empleado is not None:
+            self.id_emp = id_empleado
+        else:
+            self.id_emp = (
+                getattr(master, 'id_empleado', None) or
+                getattr(getattr(master, 'controller', None), 'id_empleado', None) or
+                getattr(getattr(master, 'master', None), 'id_empleado', None)
+            )
+            if self.id_emp is None and hasattr(master, 'winfo_toplevel'):
+                try:
+                    self.id_emp = getattr(master.winfo_toplevel(), 'id_empleado', None)
+                except Exception:
+                    pass
 
         # Lista de productos en el carrito: [{'idProducto', 'nombre', 'referencia', 'precio_compra', 'cantidad'}]
         self._carrito = []
@@ -568,6 +588,12 @@ class NuevaCompraWindow(ctk.CTkToplevel):
             self.btn_confirmar.configure(state="disabled")
 
             # Refrescar el detalle del proveedor en la ventana padre
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
+
             if self.master:
                 if hasattr(self.master, 'mostrar_detalle_proveedor'):
                     self.master.mostrar_detalle_proveedor(self.proveedor)

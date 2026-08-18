@@ -105,7 +105,7 @@ class VendedorWindow(ctk.CTkToplevel):
                                     text_color="#ff4d4d", font=("Arial", 11, "bold"))
         logo_lbl.grid(row=0, column=0, padx=20, pady=(30, 10))
 
-        ctk.CTkLabel(sb, text="Nombre Empresa", font=("Arial", 20, "bold"),
+        ctk.CTkLabel(sb, text="Nice People", font=("Arial", 20, "bold"),
                      text_color="#ffffff").grid(row=1, column=0, padx=20)
 
         tipo_rol = "Gerente" if self.rol == 1 else "Empleado"

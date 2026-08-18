@@ -24,8 +24,8 @@ class BalanceTab:
         )
         tv.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
-        self._setup_cuentas(tv.add("Cuentas por Pagar"))
-        self._setup_stats(tv.add("Estadísticas de Productos"))
+        self._setup_cuentas(tv.add("Cuentas por pagar"))
+        self._setup_stats(tv.add("Balance productos"))
         self._setup_gastos(tv.add("Gastos"))
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -36,7 +36,7 @@ class BalanceTab:
         top = ctk.CTkFrame(parent, fg_color="transparent")
         top.pack(fill="x", pady=(10, 15))
 
-        ctk.CTkLabel(top, text="Cuentas por Pagar a Proveedores",
+        ctk.CTkLabel(top, text="Cuentas por Pagar de clientes",
                      font=("Arial", 16, "bold"), text_color="#aaaaaa"
                      ).pack(side="left")
         ctk.CTkButton(top, text="↻ Actualizar",
@@ -61,7 +61,7 @@ class BalanceTab:
             print(f"Error cuentas por cobrar: {e}")
 
         if not cuentas:
-            ctk.CTkLabel(self._scroll_cuentas, text="No hay deudas o compras registradas.",
+            ctk.CTkLabel(self._scroll_cuentas, text="No hay deudas de clientes.",
                          text_color="#888888").pack(pady=30)
             return
 
