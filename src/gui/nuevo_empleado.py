@@ -1,13 +1,17 @@
 import customtkinter as ctk
 
 class NuevoEmpleadoWindow(ctk.CTkToplevel):
-    def __init__(self, master=None, empleado_datos=None, *args, **kwargs):
+    def __init__(self, master=None, empleado_datos=None, rol=None, on_success=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         
         self.empleado_datos = empleado_datos
         self.es_edicion = empleado_datos is not None
+        self.on_success = on_success
         
-        self.rol = getattr(master, 'rol', 1) # Rol del usuario logueado (debería ser 1 - Gerente)
+        if rol is not None:
+            self.rol = rol
+        else:
+            self.rol = getattr(master, 'rol', 1)
         
         # Configurar la ventana
         if self.es_edicion:
@@ -235,6 +239,12 @@ class NuevoEmpleadoWindow(ctk.CTkToplevel):
             self.error_label.configure(text=mensaje_exito, text_color="#1DB954")
             self.btn_guardar.configure(state="disabled")
             
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
+
             if self.master and hasattr(self.master, "cargar_lista_empleados"):
                 self.master.cargar_lista_empleados()
                 
@@ -292,6 +302,12 @@ class NuevoEmpleadoWindow(ctk.CTkToplevel):
             self.error_label.configure(text="¡Empleado eliminado con éxito!", text_color="#1DB954")
             self.btn_guardar.configure(state="disabled")
             
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
+
             if self.master and hasattr(self.master, "cargar_lista_empleados"):
                 self.master.cargar_lista_empleados()
                 

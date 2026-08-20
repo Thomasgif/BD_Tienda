@@ -103,8 +103,13 @@ class EnviosTab:
 
     def _abrir_nuevo_envio(self):
         from gui.nuevo_envio import NuevoEnvioWindow
-        NuevoEnvioWindow(self.scroll)
+        NuevoEnvioWindow(
+            self.controller,
+            id_empleado=self.controller.id_empleado,
+            rol=self.controller.rol,
+            on_success=self.cargar
+        )
 
     def _ver_detalle(self, envio):
         from gui.detalle_envio import DetalleEnvioWindow
-        DetalleEnvioWindow(self.scroll, envio)
+        DetalleEnvioWindow(self.controller, envio)

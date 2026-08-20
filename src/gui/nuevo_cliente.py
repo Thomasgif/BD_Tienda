@@ -2,15 +2,18 @@ import customtkinter as ctk
 from database.connection import insertar_cliente, actualizar_cliente
 
 class NuevoClienteWindow(ctk.CTkToplevel):
-    def __init__(self, master=None, cliente_datos=None, *args, **kwargs):
+    def __init__(self, master=None, cliente_datos=None, rol=None, on_success=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         
         self.cliente_datos = cliente_datos
         self.es_edicion = cliente_datos is not None
+        self.on_success = on_success
         
-        # Heredar el rol del empleado desde la ventana padre (VendedorWindow)
-        # Esto garantiza que las operaciones se ejecuten con el usuario SQL correcto.
-        self.rol = getattr(master, 'rol', 0)
+        # Heredar o asignar rol
+        if rol is not None:
+            self.rol = rol
+        else:
+            self.rol = getattr(master, 'rol', 0)
         
         # Configurar la ventana
         if self.es_edicion:
@@ -213,7 +216,13 @@ class NuevoClienteWindow(ctk.CTkToplevel):
             self.error_label.configure(text=mensaje_exito, text_color="#1DB954")
             self.btn_guardar.configure(state="disabled")
             
-            # Refrescar la tabla en el master (VendedorWindow) si tiene el método
+            # Refrescar la tabla en el master o callback
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
+
             if self.master and hasattr(self.master, "actualizar_lista_clientes"):
                 self.master.actualizar_lista_clientes()
                 

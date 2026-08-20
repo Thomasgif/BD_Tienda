@@ -332,8 +332,8 @@ class EmpleadosTab:
 
     def _abrir_registrar(self):
         from gui.nuevo_empleado import NuevoEmpleadoWindow
-        NuevoEmpleadoWindow(self.scroll).focus()
+        NuevoEmpleadoWindow(self.controller, rol=self.controller.rol, on_success=self.cargar).focus()
 
     def _abrir_editar(self, emp):
         from gui.nuevo_empleado import NuevoEmpleadoWindow
-        NuevoEmpleadoWindow(self.scroll, empleado_datos=emp).focus()
+        NuevoEmpleadoWindow(self.controller, empleado_datos=emp, rol=self.controller.rol, on_success=self.cargar).focus()
