@@ -103,6 +103,10 @@ class VentasTab:
         if not getattr(self.controller, 'todos_productos', None):
             self.refresh_productos()
 
+    def on_show(self):
+        """Called whenever the tab becomes visible."""
+        self._poblar_combos_desde_cache()
+
     def _poblar_combos_desde_cache(self):
         """Fill combos using controller's in-memory caches. No DB query."""
         vals_clientes = ["Seleccione cliente..."] + [

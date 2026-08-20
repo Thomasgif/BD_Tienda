@@ -58,6 +58,9 @@ class CuentasTab:
             text_color="#ff4d4d"
         ).pack(pady=20)
 
+    def on_show(self):
+        self.scroll.update_idletasks()
+
     def _render(self, cuentas):
         for w in self.scroll.winfo_children():
             w.destroy()

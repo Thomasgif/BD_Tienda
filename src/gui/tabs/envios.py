@@ -74,6 +74,9 @@ class EnviosTab:
             text_color="#ff4d4d"
         ).pack(pady=20)
 
+    def on_show(self):
+        self.scroll.update_idletasks()
+
     def filtrar(self, event=None):
         query = self.entry_buscar.get().lower()
         filtrados = self.todos_envios if not query else [

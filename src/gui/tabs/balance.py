@@ -37,6 +37,11 @@ class BalanceTab:
         self._cargar_stats()
         self._cargar_historial()
 
+    def on_show(self):
+        self._scroll_cuentas.update_idletasks()
+        self._scroll_stats.update_idletasks()
+        self._scroll_gastos.update_idletasks()
+
     # ═══════════════════════════════════════════════════════════════════════════
     # 1. CUENTAS POR PAGAR
     # ═══════════════════════════════════════════════════════════════════════════
