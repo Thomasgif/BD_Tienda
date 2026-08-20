@@ -71,6 +71,9 @@ class EmpleadosTab:
             text_color="#ff4d4d"
         ).pack(pady=20)
 
+    def on_show(self):
+        self.scroll.update_idletasks()
+
     # ── Rendering ──────────────────────────────────────────────────────────────
 
     def _render(self):

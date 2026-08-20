@@ -100,6 +100,9 @@ class ProveedoresTab:
             font=("Arial", 12)
         ).pack(pady=20)
 
+    def on_show(self):
+        self.scroll.update_idletasks()
+
 
 
     # ── Rendering ──────────────────────────────────────────────────────────────

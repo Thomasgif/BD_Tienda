@@ -206,6 +206,11 @@ class VendedorWindow(ctk.CTkToplevel):
         self.frames[name].grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.current_frame = name
 
+        # Notify tab that it is now visible so it can update its canvas/cache
+        tab_instance = self._tab_refs.get(name)
+        if tab_instance and hasattr(tab_instance, 'on_show'):
+            tab_instance.on_show()
+
     # ── Compatibility helpers (called by sub-windows like NuevoClienteWindow) ──
 
     def actualizar_lista_clientes(self):

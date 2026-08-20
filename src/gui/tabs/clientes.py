@@ -81,6 +81,14 @@ class ClientesTab:
             text_color="#ff4d4d"
         ).pack(pady=20)
 
+    def on_show(self):
+        cached = getattr(self.controller, 'todos_clientes', [])
+        if cached:
+            if not self.todos_clientes or len(cached) != len(self.todos_clientes):
+                self.todos_clientes = cached
+                self.filtrar()
+        self.scroll.update_idletasks()
+
 
 
     def filtrar(self, event=None):
