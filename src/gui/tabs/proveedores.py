@@ -1,3 +1,4 @@
+import threading
 import customtkinter as ctk
 from database.connection import obtener_proveedores_completos, obtener_compras_sin_envio_por_proveedor
 
@@ -64,17 +65,42 @@ class ProveedoresTab:
             font=("Arial", 15), text_color="#444444"
         ).pack(expand=True)
 
+        # Carga asíncrona al construir el tab
         self.cargar()
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def cargar(self):
-        try:
-            self._proveedores_data = obtener_proveedores_completos(self.controller.rol)
-        except Exception as e:
-            self._proveedores_data = []
-            print(f"Error al cargar proveedores: {e}")
-        self._render_lista(self._proveedores_data)
+        """Fetch suppliers asynchronously."""
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text="Cargando...", text_color="#888888",
+            font=("Arial", 13)
+        ).pack(pady=20)
+
+        def _fetch():
+            try:
+                data = obtener_proveedores_completos(self.controller.rol)
+                self.scroll.after(0, lambda d=data: self._on_loaded(d))
+            except Exception as e:
+                self.scroll.after(0, lambda err=str(e): self._on_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_loaded(self, data):
+        self._proveedores_data = data
+        self._render_lista(data)
+
+    def _on_error(self, msg):
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text=f"Error:\n{msg}", text_color="#ff4d4d",
+            font=("Arial", 12)
+        ).pack(pady=20)
+
+
 
     # ── Rendering ──────────────────────────────────────────────────────────────
 
@@ -157,59 +183,79 @@ class ProveedoresTab:
         )
         scroll_compras.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
-        try:
-            compras = obtener_compras_sin_envio_por_proveedor(
-                proveedor['idProveedor'], self.controller.rol
-            )
+        loading_lbl = ctk.CTkLabel(
+            scroll_compras,
+            text="Cargando compras pendientes...",
+            text_color="#888888", font=("Arial", 13)
+        )
+        loading_lbl.pack(pady=20)
 
-            if not compras:
-                ctk.CTkLabel(
-                    scroll_compras,
-                    text="Sin compras pendientes para este proveedor.",
-                    text_color="#555555"
-                ).pack(pady=24)
-            else:
-                for idx, c in enumerate(compras):
-                    bg = "#181818" if idx % 2 == 0 else "#111111"
-                    card = ctk.CTkFrame(scroll_compras, fg_color=bg, corner_radius=10)
-                    card.pack(fill="x", pady=5)
+        def _fetch_compras():
+            try:
+                compras = obtener_compras_sin_envio_por_proveedor(
+                    proveedor['idProveedor'], self.controller.rol
+                )
+                scroll_compras.after(0, lambda d=compras: self._render_compras_detalle(scroll_compras, d))
+            except Exception as e:
+                scroll_compras.after(0, lambda err=str(e): self._render_compras_error(scroll_compras, err))
 
-                    fecha = c.get('fechacompra', 'N/A')
-                    if hasattr(fecha, 'strftime'):
-                        fecha = fecha.strftime('%Y-%m-%d %H:%M')
-                    total = float(c.get('total_productos', 0))
-                    unidades = int(c.get('total_unidades', 0))
+        threading.Thread(target=_fetch_compras, daemon=True).start()
 
-                    hdr_row = ctk.CTkFrame(card, fg_color="transparent")
-                    hdr_row.pack(fill="x", padx=12, pady=(10, 4))
+    def _render_compras_error(self, scroll_compras, err):
+        for w in scroll_compras.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            scroll_compras, text=f"Error al cargar compras: {err}",
+            text_color="#ff4d4d"
+        ).pack(pady=20)
 
-                    ctk.CTkLabel(
-                        hdr_row, text=f"Compra #{c.get('idCompra', 'N/A')}",
-                        font=("Arial", 14, "bold"), text_color="#ffffff"
-                    ).pack(side="left")
-                    ctk.CTkLabel(
-                        hdr_row, text=str(fecha),
-                        font=("Arial", 12), text_color="#777777"
-                    ).pack(side="right")
+    def _render_compras_detalle(self, scroll_compras, compras):
+        for w in scroll_compras.winfo_children():
+            w.destroy()
 
-                    for prod in c.get('detalle', []):
-                        ctk.CTkLabel(
-                            card,
-                            text=f"  • {prod['nombre']}  ({prod['referencia']})   ×{prod['cantidad']}   ${float(prod.get('subtotal', 0)):,.2f}",
-                            font=("Arial", 12), text_color="#aaaaaa", anchor="w"
-                        ).pack(fill="x", padx=16, pady=1)
-
-                    ctk.CTkLabel(
-                        card,
-                        text=f"  {unidades} unidades — Total estimado: ${total:,.2f}",
-                        font=("Arial", 13, "bold"), text_color="#1DB954", anchor="w"
-                    ).pack(fill="x", padx=12, pady=(6, 10))
-
-        except Exception as e:
+        if not compras:
             ctk.CTkLabel(
-                scroll_compras, text=f"Error al cargar compras: {e}",
-                text_color="#ff4d4d"
-            ).pack(pady=20)
+                scroll_compras,
+                text="Sin compras pendientes para este proveedor.",
+                text_color="#555555"
+            ).pack(pady=24)
+            return
+
+        for idx, c in enumerate(compras):
+            bg = "#181818" if idx % 2 == 0 else "#111111"
+            card = ctk.CTkFrame(scroll_compras, fg_color=bg, corner_radius=10)
+            card.pack(fill="x", pady=5)
+
+            fecha = c.get('fechacompra', 'N/A')
+            if hasattr(fecha, 'strftime'):
+                fecha = fecha.strftime('%Y-%m-%d %H:%M')
+            total = float(c.get('total_productos', 0))
+            unidades = int(c.get('total_unidades', 0))
+
+            hdr_row = ctk.CTkFrame(card, fg_color="transparent")
+            hdr_row.pack(fill="x", padx=12, pady=(10, 4))
+
+            ctk.CTkLabel(
+                hdr_row, text=f"Compra #{c.get('idCompra', 'N/A')}",
+                font=("Arial", 14, "bold"), text_color="#ffffff"
+            ).pack(side="left")
+            ctk.CTkLabel(
+                hdr_row, text=str(fecha),
+                font=("Arial", 12), text_color="#777777"
+            ).pack(side="right")
+
+            for prod in c.get('detalle', []):
+                ctk.CTkLabel(
+                    card,
+                    text=f"  • {prod['nombre']}  ({prod['referencia']})   ×{prod['cantidad']}   ${float(prod.get('subtotal', 0)):,.2f}",
+                    font=("Arial", 12), text_color="#aaaaaa", anchor="w"
+                ).pack(fill="x", padx=16, pady=1)
+
+            ctk.CTkLabel(
+                card,
+                text=f"  {unidades} unidades — Total estimado: ${total:,.2f}",
+                font=("Arial", 13, "bold"), text_color="#1DB954", anchor="w"
+            ).pack(fill="x", padx=12, pady=(6, 10))
 
     # ── Navigation helpers ─────────────────────────────────────────────────────
 

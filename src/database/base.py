@@ -65,15 +65,38 @@ class SmartDict(dict):
     Diccionario inteligente que permite acceso insensible a mayúsculas/minúsculas.
     Garantiza compatibilidad entre PostgreSQL (que devuelve nombres en minúsculas)
     y el código existente de la interfaz gráfica (que usa CamelCase como 'idEmpleado', 'idVenta').
+
+    Optimización: construye un índice {key_lower: key_original} para lograr lookups O(1)
+    en lugar de O(n) por cada acceso a clave, manteniéndolo sincronizado ante mutaciones.
     """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lower_index: dict = {str(k).lower(): k for k in self.keys()}
+
     def __getitem__(self, key):
         if super().__contains__(key):
             return super().__getitem__(key)
-        key_lower = str(key).lower()
-        for k, v in self.items():
-            if str(k).lower() == key_lower:
-                return v
+        real_key = self._lower_index.get(str(key).lower())
+        if real_key is not None:
+            return super().__getitem__(real_key)
         raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if hasattr(self, '_lower_index'):
+            self._lower_index[str(key).lower()] = key
+
+    def __delitem__(self, key):
+        if super().__contains__(key):
+            super().__delitem__(key)
+            self._lower_index.pop(str(key).lower(), None)
+        else:
+            real_key = self._lower_index.get(str(key).lower())
+            if real_key is not None:
+                super().__delitem__(real_key)
+                self._lower_index.pop(str(key).lower(), None)
+            else:
+                raise KeyError(key)
 
     def get(self, key, default=None):
         try:
@@ -81,11 +104,27 @@ class SmartDict(dict):
         except KeyError:
             return default
 
+    def setdefault(self, key, default=None):
+        if key in self:
+            return self[key]
+        self[key] = default
+        return default
+
+    def pop(self, key, *args):
+        real_key = key if super().__contains__(key) else self._lower_index.get(str(key).lower(), key)
+        self._lower_index.pop(str(key).lower(), None)
+        return super().pop(real_key, *args)
+
+    def update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
+        if hasattr(self, '_lower_index'):
+            self._lower_index.update({str(k).lower(): k for k in self.keys()})
+
+    def copy(self):
+        return SmartDict(super().copy())
+
     def __contains__(self, key):
-        if super().__contains__(key):
-            return True
-        key_lower = str(key).lower()
-        return any(str(k).lower() == key_lower for k in self.keys())
+        return super().__contains__(key) or str(key).lower() in self._lower_index
 
 
 def _convertir_filas(data):

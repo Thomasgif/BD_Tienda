@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime
 import customtkinter as ctk
 from database.connection import (
@@ -12,7 +13,7 @@ class BalanceTab:
     def __init__(self, parent_frame, controller):
         self.controller = controller
 
-        tv = ctk.CTkTabview(
+        self.tv = ctk.CTkTabview(
             parent_frame,
             fg_color="#121212",
             segmented_button_fg_color="#0a0a0a",
@@ -22,11 +23,19 @@ class BalanceTab:
             segmented_button_unselected_hover_color="#2b2b2b",
             text_color="#ffffff"
         )
-        tv.pack(fill="both", expand=True, padx=40, pady=(0, 20))
+        self.tv.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
-        self._setup_cuentas(tv.add("Cuentas por pagar"))
-        self._setup_stats(tv.add("Balance productos"))
-        self._setup_gastos(tv.add("Gastos"))
+        self._setup_cuentas(self.tv.add("Cuentas por pagar"))
+        self._setup_stats(self.tv.add("Balance productos"))
+        self._setup_gastos(self.tv.add("Gastos"))
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def cargar(self):
+        """Public method to refresh all balance tabs."""
+        self._cargar_cuentas()
+        self._cargar_stats()
+        self._cargar_historial()
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 1. CUENTAS POR PAGAR
@@ -54,11 +63,29 @@ class BalanceTab:
         for w in self._scroll_cuentas.winfo_children():
             w.destroy()
 
-        try:
-            cuentas = obtener_cuentas_por_cobrar(self.controller.rol)
-        except Exception as e:
-            cuentas = []
-            print(f"Error cuentas por cobrar: {e}")
+        ctk.CTkLabel(
+            self._scroll_cuentas, text="Cargando cuentas por cobrar...",
+            text_color="#888888", font=("Arial", 14)
+        ).pack(pady=30)
+
+        def _fetch():
+            try:
+                cuentas = obtener_cuentas_por_cobrar(self.controller.rol)
+                self._scroll_cuentas.after(0, lambda c=cuentas: self._render_cuentas(c))
+            except Exception as e:
+                self._scroll_cuentas.after(0, lambda err=str(e): self._render_cuentas_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _render_cuentas_error(self, err):
+        for w in self._scroll_cuentas.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self._scroll_cuentas, text=f"Error cargando cuentas:\n{err}",
+                     text_color="#ff4d4d").pack(pady=20)
+
+    def _render_cuentas(self, cuentas):
+        for w in self._scroll_cuentas.winfo_children():
+            w.destroy()
 
         if not cuentas:
             ctk.CTkLabel(self._scroll_cuentas, text="No hay deudas de clientes.",
@@ -134,11 +161,28 @@ class BalanceTab:
         for w in self._scroll_stats.winfo_children():
             w.destroy()
 
-        try:
-            datos = obtener_resumen_financiero_7dias(self.controller.rol)
-        except Exception as e:
-            ctk.CTkLabel(self._scroll_stats, text=f"Error:\n{e}", text_color="#ff4d4d").pack(pady=20)
-            return
+        ctk.CTkLabel(
+            self._scroll_stats, text="Cargando resumen financiero...",
+            text_color="#888888", font=("Arial", 14)
+        ).pack(pady=30)
+
+        def _fetch():
+            try:
+                datos = obtener_resumen_financiero_7dias(self.controller.rol)
+                self._scroll_stats.after(0, lambda d=datos: self._render_stats(d))
+            except Exception as e:
+                self._scroll_stats.after(0, lambda err=str(e): self._render_stats_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _render_stats_error(self, err):
+        for w in self._scroll_stats.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self._scroll_stats, text=f"Error:\n{err}", text_color="#ff4d4d").pack(pady=20)
+
+    def _render_stats(self, datos):
+        for w in self._scroll_stats.winfo_children():
+            w.destroy()
 
         if not datos:
             ctk.CTkLabel(self._scroll_stats, text="No hay datos financieros disponibles.",
@@ -334,11 +378,29 @@ class BalanceTab:
         for w in self._scroll_gastos.winfo_children():
             w.destroy()
 
-        try:
-            gastos = obtener_gastos(self.controller.rol)
-        except Exception as e:
-            gastos = []
-            print(f"Error gastos: {e}")
+        ctk.CTkLabel(
+            self._scroll_gastos, text="Cargando historial de gastos...",
+            text_color="#888888", font=("Arial", 12)
+        ).pack(pady=20)
+
+        def _fetch():
+            try:
+                gastos = obtener_gastos(self.controller.rol)
+                self._scroll_gastos.after(0, lambda g=gastos: self._render_historial(g))
+            except Exception as e:
+                self._scroll_gastos.after(0, lambda err=str(e): self._render_historial_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _render_historial_error(self, err):
+        for w in self._scroll_gastos.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self._scroll_gastos, text=f"Error cargando gastos:\n{err}",
+                     text_color="#ff4d4d").pack(pady=20)
+
+    def _render_historial(self, gastos):
+        for w in self._scroll_gastos.winfo_children():
+            w.destroy()
 
         if not gastos:
             ctk.CTkLabel(self._scroll_gastos, text="No hay gastos registrados.",

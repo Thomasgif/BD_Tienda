@@ -10,7 +10,7 @@ def obtener_productos(rol=None):
             cursor.execute("""
                 SELECT idProducto, nombre, referencia, precio_compra, precio_venta, bodega, descripcion 
                 FROM PRODUCTO
-                ORDER BY idProducto
+                ORDER BY nombre
             """)
             productos = cursor.fetchall()
             return _convertir_filas(productos) or []
