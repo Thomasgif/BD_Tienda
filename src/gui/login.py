@@ -24,6 +24,14 @@ class LoginWindow(ctk.CTk):
         # Color de fondo negro absoluto para que resalte la temática
         self.configure(fg_color="#050505")
 
+        # Configurar icono si existe
+        icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo.ico'))
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass
+
         # Frame central para contener el formulario
         self.frame = ctk.CTkFrame(
             master=self, 
@@ -148,6 +156,6 @@ class LoginWindow(ctk.CTk):
             self.error_label.configure(text=str(e), text_color="#ff4d4d")
 
 
-if __name__ == "__main__":
+if __name__ in ("__main__", "login"):
     app = LoginWindow()
     app.mainloop()

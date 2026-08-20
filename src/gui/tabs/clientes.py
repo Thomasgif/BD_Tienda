@@ -363,10 +363,10 @@ class ClientesTab:
 
     def _abrir_nuevo_cliente(self):
         from gui.nuevo_cliente import NuevoClienteWindow
-        NuevoClienteWindow(self.scroll)
+        NuevoClienteWindow(self.controller, rol=self.controller.rol, on_success=self.cargar)
 
     def _editar_cliente(self, documento):
         cliente = next((c for c in self.todos_clientes if c['documento'] == documento), None)
         if cliente:
             from gui.nuevo_cliente import NuevoClienteWindow
-            NuevoClienteWindow(self.scroll, cliente_datos=cliente)
+            NuevoClienteWindow(self.controller, cliente_datos=cliente, rol=self.controller.rol, on_success=self.cargar)

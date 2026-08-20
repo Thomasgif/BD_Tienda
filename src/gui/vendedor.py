@@ -45,6 +45,14 @@ class VendedorWindow(ctk.CTkToplevel):
         self.resizable(True, True)
         self.configure(fg_color="#050505")
 
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        icon_path = os.path.join(base_dir, "assets", "logo.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path)
+            except Exception:
+                pass
+
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
@@ -92,7 +100,10 @@ class VendedorWindow(ctk.CTkToplevel):
         sb.grid(row=0, column=0, sticky="nsew")
         sb.grid_rowconfigure(10, weight=1)
 
-        ruta_logo = os.path.join("assets", "logo.jpeg")
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        ruta_logo = os.path.join(base_dir, "assets", "logo.jpeg")
+        if not os.path.exists(ruta_logo):
+            ruta_logo = os.path.join("assets", "logo.jpeg")
         try:
             img = Image.open(ruta_logo)
             if img.mode != "RGB":

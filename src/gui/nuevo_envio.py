@@ -81,14 +81,33 @@ class DatePicker(ctk.CTkToplevel):
         self.destroy()
 
 class NuevoEnvioWindow(ctk.CTkToplevel):
-    def __init__(self, master=None, envio_datos=None, *args, **kwargs):
+    def __init__(self, master=None, envio_datos=None, id_empleado=None, rol=None, on_success=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         
         self.envio_datos = envio_datos
         self.es_edicion = envio_datos is not None
+        self.on_success = on_success
         
-        # Heredar el rol del empleado desde la ventana padre (VendedorWindow)
-        self.rol = getattr(master, 'rol', 0)
+        # Resolver rol con fallbacks
+        if rol is not None:
+            self.rol = rol
+        else:
+            self.rol = getattr(master, 'rol', 0)
+
+        # Resolver id_empleado de forma robusta
+        if id_empleado is not None:
+            self.id_emp = id_empleado
+        else:
+            self.id_emp = (
+                getattr(master, 'id_empleado', None) or
+                getattr(getattr(master, 'controller', None), 'id_empleado', None) or
+                getattr(getattr(master, 'master', None), 'id_empleado', None)
+            )
+            if self.id_emp is None and hasattr(master, 'winfo_toplevel'):
+                try:
+                    self.id_emp = getattr(master.winfo_toplevel(), 'id_empleado', None)
+                except Exception:
+                    pass
         
         # Configurar la ventana
         if self.es_edicion:
@@ -300,7 +319,7 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
             if not id_metodo:
                 raise Exception("Seleccione un método de pago válido.")
                 
-            id_empleado = getattr(self.master, 'id_empleado', 1)
+            id_empleado = self.id_emp or 1
             
             insertar_envio(idCompra=id_compra, idEmpleado=id_empleado, fecha=fecha, valor=float(valor), idMetodo_de_pago=id_metodo, rol=self.rol)
             
@@ -308,7 +327,13 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
             self.error_label.configure(text=mensaje_exito, text_color="#1DB954")
             self.btn_guardar.configure(state="disabled")
             
-            # Refrescar la tabla en el master si existe el método
+            # Refrescar la tabla en el master o ejecutar callback
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
+
             if self.master and hasattr(self.master, "actualizar_lista_envios"):
                 self.master.actualizar_lista_envios()
                 
