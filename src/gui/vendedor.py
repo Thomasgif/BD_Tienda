@@ -1,13 +1,17 @@
 """
 vendedor.py — VendedorWindow controller.
 
-This file is now a thin shell: it builds the sidebar, creates content frames,
-and delegates ALL tab logic to the modular classes in src/gui/tabs/.
+This file is now a thin shell: it builds the sidebar, creates placeholder
+frames for each tab, and delegates ALL tab logic to the modular classes
+in src/gui/tabs/.
+
+Performance: tabs are built LAZILY (only when first selected). This means
+no DB queries run at startup for tabs the user hasn't visited yet.
 """
+import threading
 import customtkinter as ctk
 import os
 from PIL import Image
-from database.connection import obtener_clientes, obtener_productos
 
 # ── Tab imports ────────────────────────────────────────────────────────────────
 from gui.tabs.productos import ProductosTab
@@ -28,17 +32,10 @@ class VendedorWindow(ctk.CTkToplevel):
         self.rol = rol
         self.id_empleado = id_empleado
 
-        # Shared data caches (used by VentasTab / modals)
+        # Shared data caches — populated lazily by each tab when first visited.
+        # No DB queries at startup; tabs fill these when they first load.
         self.todos_clientes = []
         self.todos_productos = []
-        try:
-            self.todos_clientes = obtener_clientes(self.rol)
-        except Exception as e:
-            print(f"Error cargando clientes iniciales: {e}")
-        try:
-            self.todos_productos = obtener_productos(self.rol)
-        except Exception as e:
-            print(f"Error cargando productos iniciales: {e}")
 
         self.title("Sistema de Ventas")
         self.geometry("1000x700")
@@ -59,38 +56,51 @@ class VendedorWindow(ctk.CTkToplevel):
         # ── Sidebar ────────────────────────────────────────────────────────────
         self._build_sidebar(nombre_vendedor)
 
-        # ── Content frames ─────────────────────────────────────────────────────
+        # ── Nav items ──────────────────────────────────────────────────────────
         nav_items = ["Productos", "Ventas", "Cuentas", "Clientes", "Proveedores", "Envíos"]
         if self.rol == 1:
             nav_items += ["Empleados", "Balance"]
 
+        # Mapping: tab name → tab class
+        self._tab_classes = {
+            "Productos":   ProductosTab,
+            "Ventas":      VentasTab,
+            "Cuentas":     CuentasTab,
+            "Clientes":    ClientesTab,
+            "Proveedores": ProveedoresTab,
+            "Envíos":      EnviosTab,
+            "Empleados":   EmpleadosTab,
+            "Balance":     BalanceTab,
+        }
+
+        # Create placeholder frames for ALL tabs (so grid layout is ready),
+        # but do NOT instantiate tab classes yet (lazy).
         self.frames = {}
-        self._tab_refs = {}   # stores tab class instances for cross-tab refreshing
+        self._tab_refs = {}      # tab name → tab instance (built lazily)
+        self._built_tabs = set() # track which tabs have been instantiated
 
         for item in nav_items:
             frame = ctk.CTkFrame(self, corner_radius=15, fg_color="#121212")
             self.frames[item] = frame
 
+            # Title + separator go into the frame now so they're always visible
             ctk.CTkLabel(frame, text=item, font=("Arial", 32, "bold"),
                          text_color="#ffffff").pack(anchor="w", padx=40, pady=(40, 10))
             ctk.CTkFrame(frame, height=2, fg_color="#1DB954"
                          ).pack(fill="x", padx=40, pady=(0, 30))
 
-            tab_instance = self._build_tab(item, frame)
-            if tab_instance:
-                self._tab_refs[item] = tab_instance
-
-        # Expose tabs via named attributes for cross-tab callbacks
-        self._tab_productos   = self._tab_refs.get("Productos")
-        self._tab_ventas      = self._tab_refs.get("Ventas")
-        self._tab_cuentas     = self._tab_refs.get("Cuentas")
-        self._tab_clientes    = self._tab_refs.get("Clientes")
-        self._tab_proveedores = self._tab_refs.get("Proveedores")
-        self._tab_envios      = self._tab_refs.get("Envíos")
-        self._tab_empleados   = self._tab_refs.get("Empleados")
-        self._tab_balance     = self._tab_refs.get("Balance")
+        # Expose tab refs (populated on first visit)
+        self._tab_productos   = None
+        self._tab_ventas      = None
+        self._tab_cuentas     = None
+        self._tab_clientes    = None
+        self._tab_proveedores = None
+        self._tab_envios      = None
+        self._tab_empleados   = None
+        self._tab_balance     = None
 
         self.current_frame = None
+        # Navigate to the first tab — this will trigger the lazy build
         self.select_frame("Productos")
 
     # ── Sidebar builder ────────────────────────────────────────────────────────
@@ -147,27 +157,34 @@ class VendedorWindow(ctk.CTkToplevel):
     # ── Tab factory ────────────────────────────────────────────────────────────
 
     def _build_tab(self, name, frame):
-        if name == "Productos":
-            return ProductosTab(frame, self)
-        elif name == "Ventas":
-            return VentasTab(frame, self)
-        elif name == "Cuentas":
-            return CuentasTab(frame, self)
-        elif name == "Clientes":
-            return ClientesTab(frame, self)
-        elif name == "Proveedores":
-            return ProveedoresTab(frame, self)
-        elif name == "Envíos":
-            return EnviosTab(frame, self)
-        elif name == "Empleados":
-            return EmpleadosTab(frame, self)
-        elif name == "Balance":
-            return BalanceTab(frame, self)
-        return None
+        """Instantiate the tab class for *name* and wire up the named attribute."""
+        cls = self._tab_classes.get(name)
+        if cls is None:
+            return None
+        instance = cls(frame, self)
+        self._tab_refs[name] = instance
+
+        # Update named shortcuts
+        attr_map = {
+            "Productos":   "_tab_productos",
+            "Ventas":      "_tab_ventas",
+            "Cuentas":     "_tab_cuentas",
+            "Clientes":    "_tab_clientes",
+            "Proveedores": "_tab_proveedores",
+            "Envíos":      "_tab_envios",
+            "Empleados":   "_tab_empleados",
+            "Balance":     "_tab_balance",
+        }
+        if name in attr_map:
+            setattr(self, attr_map[name], instance)
+
+        self._built_tabs.add(name)
+        return instance
 
     # ── Navigation ─────────────────────────────────────────────────────────────
 
     def select_frame(self, name):
+        # Update button styles
         for btn_name, btn in self.nav_buttons.items():
             if btn_name == name:
                 btn.configure(fg_color="#1DB954", text_color="#000000",
@@ -176,20 +193,18 @@ class VendedorWindow(ctk.CTkToplevel):
                 btn.configure(fg_color="transparent", text_color="#888888",
                               font=("Arial", 15))
 
+        # Hide the current frame
         if self.current_frame is not None:
             self.frames[self.current_frame].grid_forget()
 
+        # LAZY BUILD: only instantiate the tab class on first visit.
+        # The tab's __init__ is responsible for triggering its own async cargar().
+        if name not in self._built_tabs:
+            self._build_tab(name, self.frames[name])
+
+        # Show the selected frame
         self.frames[name].grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.current_frame = name
-
-        # Refresh data when switching to a tab
-        tab = self._tab_refs.get(name)
-        if hasattr(tab, 'cargar'):
-            tab.cargar()
-        # Also keep ventas combos fresh after client/product changes
-        if name == "Ventas" and self._tab_ventas:
-            self._tab_ventas.refresh_clientes()
-            self._tab_ventas.refresh_productos()
 
     # ── Compatibility helpers (called by sub-windows like NuevoClienteWindow) ──
 
@@ -224,6 +239,14 @@ class VendedorWindow(ctk.CTkToplevel):
     def cargar_lista_empleados(self):
         if self._tab_empleados:
             self._tab_empleados.cargar()
+
+    def actualizar_balance_cuentas(self):
+        if self._tab_balance:
+            self._tab_balance.actualizar_cuentas()
+
+    def actualizar_balance_tab(self):
+        if self._tab_balance:
+            self._tab_balance.cargar()
 
     def _abrir_actualizar_precio_producto(self, prod):
         from gui.actualizar_precio_producto import ActualizarPrecioProductoWindow

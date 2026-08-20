@@ -1,3 +1,4 @@
+import threading
 import customtkinter as ctk
 from database.connection import obtener_envios_list
 
@@ -18,16 +19,23 @@ class EnviosTab:
         ).pack(side="left")
 
         ctk.CTkButton(
+            top_bar, text="↻ Actualizar",
+            font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", hover_color="#333333", text_color="#1DB954",
+            width=100, command=self.cargar
+        ).pack(side="right")
+
+        ctk.CTkButton(
             top_bar, text="+ Nuevo Envío",
             font=("Arial", 14, "bold"),
             fg_color="#1DB954", hover_color="#179643", text_color="black",
             command=self._abrir_nuevo_envio
-        ).pack(side="right")
+        ).pack(side="right", padx=(0, 10))
 
         self.entry_buscar = ctk.CTkEntry(
             top_bar, placeholder_text="Buscar por proveedor...", width=200
         )
-        self.entry_buscar.pack(side="right", padx=(0, 20))
+        self.entry_buscar.pack(side="right", padx=(0, 10))
         self.entry_buscar.bind("<KeyRelease>", self.filtrar)
 
         self.scroll = ctk.CTkScrollableFrame(
@@ -38,13 +46,33 @@ class EnviosTab:
         self.cargar()
 
     def cargar(self):
-        try:
-            self.todos_envios = obtener_envios_list(self.controller.rol)
-            self.filtrar()
-        except Exception as e:
-            print(f"Error al cargar envíos: {e}")
-            self.todos_envios = []
-            self._render([])
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text="Cargando envíos...", text_color="#888888",
+            font=("Arial", 14)
+        ).pack(pady=30)
+
+        def _fetch():
+            try:
+                data = obtener_envios_list(self.controller.rol)
+                self.scroll.after(0, lambda d=data: self._on_loaded(d))
+            except Exception as e:
+                self.scroll.after(0, lambda err=str(e): self._on_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_loaded(self, data):
+        self.todos_envios = data
+        self.filtrar()
+
+    def _on_error(self, msg):
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text=f"Error al cargar envíos:\n{msg}",
+            text_color="#ff4d4d"
+        ).pack(pady=20)
 
     def filtrar(self, event=None):
         query = self.entry_buscar.get().lower()

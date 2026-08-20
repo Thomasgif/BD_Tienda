@@ -1,3 +1,4 @@
+import threading
 import customtkinter as ctk
 from database.connection import obtener_clientes, obtener_deudas_cliente, pago_total_venta
 
@@ -20,16 +21,23 @@ class ClientesTab:
         ).pack(side="left")
 
         ctk.CTkButton(
+            top_bar, text="↻ Actualizar",
+            font=("Arial", 12, "bold"),
+            fg_color="#1e1e1e", hover_color="#333333", text_color="#1DB954",
+            width=100, command=self.cargar
+        ).pack(side="right")
+
+        ctk.CTkButton(
             top_bar, text="+ Nuevo Cliente",
             font=("Arial", 14, "bold"),
             fg_color="#1DB954", hover_color="#179643", text_color="black",
             command=self._abrir_nuevo_cliente
-        ).pack(side="right")
+        ).pack(side="right", padx=(0, 10))
 
         self.entry_buscar = ctk.CTkEntry(
             top_bar, placeholder_text="Buscar nombre o doc...", width=200
         )
-        self.entry_buscar.pack(side="right", padx=(0, 20))
+        self.entry_buscar.pack(side="right", padx=(0, 10))
         self.entry_buscar.bind("<KeyRelease>", self.filtrar)
 
         # ── Scrollable list ────────────────────────────────────────────────────
@@ -38,22 +46,42 @@ class ClientesTab:
         )
         self.scroll.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
+        # Carga asíncrona al construir el tab
         self.cargar()
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def cargar(self):
-        try:
-            self.todos_clientes = obtener_clientes(self.controller.rol)
-            # Sync back to controller so VentasTab combos stay up to date
-            self.controller.todos_clientes = self.todos_clientes
-            self.filtrar()
-        except Exception as e:
-            self._limpiar()
-            ctk.CTkLabel(
-                self.scroll, text=f"Error cargando clientes:\n{e}",
-                text_color="#ff4d4d"
-            ).pack(pady=20)
+        """Fetch clients from DB asynchronously, then re-render."""
+        self._limpiar()
+        ctk.CTkLabel(
+            self.scroll, text="Cargando clientes...", text_color="#888888",
+            font=("Arial", 14)
+        ).pack(pady=30)
+
+        def _fetch():
+            try:
+                data = obtener_clientes(self.controller.rol)
+                self.scroll.after(0, lambda d=data: self._on_loaded(d))
+            except Exception as e:
+                self.scroll.after(0, lambda err=str(e): self._on_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_loaded(self, data):
+        self.todos_clientes = data
+        # Sync back to controller so VentasTab combos stay up to date
+        self.controller.todos_clientes = data
+        self.filtrar()
+
+    def _on_error(self, msg):
+        self._limpiar()
+        ctk.CTkLabel(
+            self.scroll, text=f"Error cargando clientes:\n{msg}",
+            text_color="#ff4d4d"
+        ).pack(pady=20)
+
+
 
     def filtrar(self, event=None):
         query = self.entry_buscar.get().lower()
@@ -163,12 +191,29 @@ class ClientesTab:
         for w in df.winfo_children():
             w.destroy()
 
-        try:
-            deudas = obtener_deudas_cliente(idcli, self.controller.rol)
-        except Exception as e:
-            ctk.CTkLabel(df, text=f"Error al cargar deudas: {e}",
-                         text_color="red").pack(pady=10)
-            return
+        ctk.CTkLabel(
+            df, text="Cargando deudas...",
+            font=("Arial", 12), text_color="#888888"
+        ).pack(anchor="w", padx=15, pady=10)
+
+        def _fetch():
+            try:
+                deudas = obtener_deudas_cliente(idcli, self.controller.rol)
+                df.after(0, lambda d=deudas: self._render_deudas_cliente(df, idcli, d))
+            except Exception as e:
+                df.after(0, lambda err=str(e): self._render_deudas_error(df, err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _render_deudas_error(self, df, err):
+        for w in df.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(df, text=f"Error al cargar deudas: {err}",
+                     text_color="red").pack(pady=10)
+
+    def _render_deudas_cliente(self, df, idcli, deudas):
+        for w in df.winfo_children():
+            w.destroy()
 
         ctk.CTkLabel(
             df, text="Deudas pendientes del cliente:",

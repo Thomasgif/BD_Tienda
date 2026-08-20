@@ -90,9 +90,10 @@ class ActualizarPrecioProductoWindow(ctk.CTkToplevel):
         self.entry_stock.pack(fill="x", pady=(0, 10))
 
         # 6. Descripción
+        descripcion= self.producto_datos.get('descripcion', '') if None!=self.producto_datos.get('descripcion', '') else  "    "
         ctk.CTkLabel(self.info_container, text="Descripción", font=("Arial", 12, "bold"), text_color="#888888").pack(anchor="w", pady=(5, 2))
         self.txt_desc = ctk.CTkTextbox(self.info_container, height=60, corner_radius=8, fg_color="#181818", border_color="#222222", text_color="#888888")
-        self.txt_desc.insert("1.0", self.producto_datos.get('descripcion', ''))
+        self.txt_desc.insert("1.0", descripcion )
         self.txt_desc.configure(state="disabled")
         self.txt_desc.pack(fill="x", pady=(0, 10))
 
