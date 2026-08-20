@@ -8,7 +8,7 @@ def obtener_productos(rol=None):
     try:
         with db_cursor(commit=False, dictionary=True) as (cursor, _):
             cursor.execute("""
-                SELECT idProducto, nombre, referencia, precio_compra, precio_venta, bodega, descripción 
+                SELECT idProducto, nombre, referencia, precio_compra, precio_venta, bodega, descripcion 
                 FROM PRODUCTO
                 ORDER BY idProducto
             """)
