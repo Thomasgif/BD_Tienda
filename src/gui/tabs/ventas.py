@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from math import isfinite
 from database.connection import (
-    obtener_clientes, obtener_productos, obtener_saldos_cuentas,
+    obtener_saldos_cuentas,
     obtener_ventas_cliente, obtener_detalle_venta,
     registrar_devolucion_cambio, registrar_venta
 )
@@ -90,39 +90,70 @@ class VentasTab:
                       command=self._procesar_venta
                       ).pack(fill="x", padx=20, pady=(0, 20))
 
-        self._refresh_combos()
+        # Poblar combos desde el caché del controller (sin consulta DB)
+        self._poblar_combos_desde_cache()
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def refresh_clientes(self):
-        try:
-            self.controller.todos_clientes = obtener_clientes(self.controller.rol)
-        except Exception:
-            pass
-        vals = ["Seleccione cliente..."] + [
+    def cargar(self):
+        """Called when the tab becomes active. Refreshes combos from controller cache."""
+        self._poblar_combos_desde_cache()
+        if not getattr(self.controller, 'todos_clientes', None):
+            self.refresh_clientes()
+        if not getattr(self.controller, 'todos_productos', None):
+            self.refresh_productos()
+
+    def on_show(self):
+        """Called whenever the tab becomes visible."""
+        self._poblar_combos_desde_cache()
+
+    def _poblar_combos_desde_cache(self):
+        """Fill combos using controller's in-memory caches. No DB query."""
+        vals_clientes = ["Seleccione cliente..."] + [
             f"{c['nombre']} {c['apellidos']} ({c['documento']})"
             for c in getattr(self.controller, 'todos_clientes', [])
         ]
-        self.combo_cliente.configure(values=vals)
+        self.combo_cliente.configure(values=vals_clientes)
         self.combo_cliente.set("Seleccione cliente...")
 
-    def refresh_productos(self):
-        try:
-            self.controller.todos_productos = obtener_productos(self.controller.rol)
-        except Exception:
-            pass
-        vals = ["Seleccione producto..."] + [
+        vals_productos = ["Seleccione producto..."] + [
             f"{p['nombre']} ({p['referencia']})"
             for p in getattr(self.controller, 'todos_productos', [])
         ]
-        self.combo_producto.configure(values=vals)
+        self.combo_producto.configure(values=vals_productos)
         self.combo_producto.set("Seleccione producto...")
 
-    # ── Internal helpers ───────────────────────────────────────────────────────
+    def refresh_clientes(self):
+        """Called after a client mutation — re-fetches from DB and updates combos."""
+        import threading
+        from database.connection import obtener_clientes
 
-    def _refresh_combos(self):
-        self.refresh_clientes()
-        self.refresh_productos()
+        def _fetch():
+            try:
+                data = obtener_clientes(self.controller.rol)
+                self.controller.todos_clientes = data
+                self.combo_cliente.after(0, lambda: self._poblar_combos_desde_cache())
+            except Exception:
+                pass
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def refresh_productos(self):
+        """Called after a product mutation — re-fetches from DB and updates combos."""
+        import threading
+        from database.connection import obtener_productos
+
+        def _fetch():
+            try:
+                data = obtener_productos(self.controller.rol)
+                self.controller.todos_productos = data
+                self.combo_producto.after(0, lambda: self._poblar_combos_desde_cache())
+            except Exception:
+                pass
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+
 
     def _agregar_producto(self):
         prod_str = self.combo_producto.get()

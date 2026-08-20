@@ -1,3 +1,4 @@
+import threading
 import customtkinter as ctk
 from database.connection import obtener_saldos_cuentas
 
@@ -28,20 +29,41 @@ class CuentasTab:
         )
         self.scroll.pack(fill="both", expand=True, padx=40, pady=(0, 20))
 
+        # Carga asíncrona al construir el tab
         self.cargar()
 
     def cargar(self):
+        """Fetch account balances asynchronously."""
         for w in self.scroll.winfo_children():
             w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text="Cargando cuentas...", text_color="#888888",
+            font=("Arial", 14)
+        ).pack(pady=30)
 
-        try:
-            cuentas = obtener_saldos_cuentas(self.controller.rol)
-        except Exception as e:
-            ctk.CTkLabel(
-                self.scroll, text=f"Error cargando cuentas:\n{e}",
-                text_color="#ff4d4d"
-            ).pack(pady=20)
-            return
+        def _fetch():
+            try:
+                data = obtener_saldos_cuentas(self.controller.rol)
+                self.scroll.after(0, lambda d=data: self._render(d))
+            except Exception as e:
+                self.scroll.after(0, lambda err=str(e): self._on_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_error(self, msg):
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text=f"Error cargando cuentas:\n{msg}",
+            text_color="#ff4d4d"
+        ).pack(pady=20)
+
+    def on_show(self):
+        self.scroll.update_idletasks()
+
+    def _render(self, cuentas):
+        for w in self.scroll.winfo_children():
+            w.destroy()
 
         if not cuentas:
             ctk.CTkLabel(

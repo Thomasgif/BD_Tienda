@@ -1,3 +1,4 @@
+import threading
 import customtkinter as ctk
 from database.connection import obtener_empleados, obtener_ventas_mes_empleado, obtener_saldos_cuentas, pagar_empleado
 
@@ -42,12 +43,36 @@ class EmpleadosTab:
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def cargar(self):
-        try:
-            self._todos_empleados = obtener_empleados(self.controller.rol)
-        except Exception as e:
-            self._todos_empleados = []
-            print(f"Error cargando empleados: {e}")
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text="Cargando empleados...", text_color="#888888",
+            font=("Arial", 14)
+        ).pack(pady=30)
+
+        def _fetch():
+            try:
+                data = obtener_empleados(self.controller.rol)
+                self.scroll.after(0, lambda d=data: self._on_loaded(d))
+            except Exception as e:
+                self.scroll.after(0, lambda err=str(e): self._on_error(err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_loaded(self, data):
+        self._todos_empleados = data
         self._render()
+
+    def _on_error(self, msg):
+        for w in self.scroll.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(
+            self.scroll, text=f"Error cargando empleados:\n{msg}",
+            text_color="#ff4d4d"
+        ).pack(pady=20)
+
+    def on_show(self):
+        self.scroll.update_idletasks()
 
     # ── Rendering ──────────────────────────────────────────────────────────────
 
@@ -169,11 +194,29 @@ class EmpleadosTab:
     def _cargar_ventas(self, id_emp, vf):
         for w in vf.winfo_children():
             w.destroy()
-        try:
-            ventas = obtener_ventas_mes_empleado(id_emp, self.controller.rol)
-        except Exception as e:
-            ctk.CTkLabel(vf, text=f"Error: {e}", text_color="#ff4d4d").pack(padx=12, pady=8)
-            return
+
+        ctk.CTkLabel(
+            vf, text="Cargando ventas del mes...",
+            font=("Arial", 12), text_color="#888888"
+        ).pack(anchor="w", padx=12, pady=10)
+
+        def _fetch():
+            try:
+                ventas = obtener_ventas_mes_empleado(id_emp, self.controller.rol)
+                vf.after(0, lambda v=ventas: self._render_ventas(vf, v))
+            except Exception as e:
+                vf.after(0, lambda err=str(e): self._render_ventas_error(vf, err))
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _render_ventas_error(self, vf, err):
+        for w in vf.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(vf, text=f"Error: {err}", text_color="#ff4d4d").pack(padx=12, pady=8)
+
+    def _render_ventas(self, vf, ventas):
+        for w in vf.winfo_children():
+            w.destroy()
 
         ctk.CTkLabel(
             vf, text=f"  Ventas del mes ({len(ventas)} registros)",
@@ -227,7 +270,7 @@ class EmpleadosTab:
         for j, w in enumerate(mini_cols):
             tf.grid_columnconfigure(j, weight=w)
         ctk.CTkLabel(tf, text="TOTAL MES", font=("Arial", 12, "bold"), text_color="#1DB954"
-                     ).grid(row=0, column=0, columnspan=2, padx=10, pady=6, sticky="w")
+                         ).grid(row=0, column=0, columnspan=2, padx=10, pady=6, sticky="w")
         ctk.CTkLabel(tf, text=f"${total_mes:,.2f}", font=("Arial", 13, "bold"), text_color="#1DB954"
                      ).grid(row=0, column=2, padx=10, pady=6, sticky="w")
 
