@@ -27,41 +27,66 @@ class VentasTab:
         cart_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
 
         # ── Form (left) ────────────────────────────────────────────────────────
+        form_frame.grid_columnconfigure(0, weight=1)
+        form_frame.grid_columnconfigure(1, weight=1)
+
         ctk.CTkLabel(form_frame, text="Facturar Venta",
                      font=("Arial", 20, "bold"), text_color="#1DB954"
                      ).grid(row=0, column=0, columnspan=2, padx=20, pady=(20, 15), sticky="w")
 
         ctk.CTkLabel(form_frame, text="Cliente:", font=("Arial", 14, "bold"), text_color="#cccccc"
-                     ).grid(row=1, column=0, padx=20, pady=10, sticky="w")
+                     ).grid(row=1, column=0, padx=20, pady=5, sticky="w")
         self.combo_cliente = ctk.CTkComboBox(form_frame, values=["Seleccione cliente..."], width=200)
-        self.combo_cliente.grid(row=1, column=1, padx=20, pady=10, sticky="w")
+        self.combo_cliente.grid(row=1, column=1, padx=20, pady=5, sticky="e")
 
         ctk.CTkFrame(form_frame, height=1, fg_color="#333333"
                      ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
 
-        ctk.CTkLabel(form_frame, text="Añadir Producto:", font=("Arial", 14, "bold"), text_color="#cccccc"
-                     ).grid(row=3, column=0, padx=20, pady=10, sticky="w")
-        self.combo_producto = ctk.CTkComboBox(form_frame, values=["Seleccione producto..."], width=200)
-        self.combo_producto.grid(row=3, column=1, padx=20, pady=10, sticky="w")
+        # ── Búsqueda de Productos por Nombre ──────────────────────────────────
+        ctk.CTkLabel(form_frame, text="Buscar Producto por Nombre:", font=("Arial", 14, "bold"), text_color="#cccccc"
+                     ).grid(row=3, column=0, columnspan=2, padx=20, pady=(5, 4), sticky="w")
 
-        ctk.CTkLabel(form_frame, text="Cantidad:", font=("Arial", 14, "bold"), text_color="#cccccc"
-                     ).grid(row=4, column=0, padx=20, pady=10, sticky="w")
-        self.entry_cantidad = ctk.CTkEntry(form_frame, width=100, placeholder_text="Ej: 1")
-        self.entry_cantidad.grid(row=4, column=1, padx=20, pady=10, sticky="w")
+        self.entry_buscar_prod = ctk.CTkEntry(
+            form_frame, placeholder_text="Escriba el nombre del producto...", height=34
+        )
+        self.entry_buscar_prod.grid(row=4, column=0, columnspan=2, padx=20, pady=(0, 6), sticky="ew")
+        self.entry_buscar_prod.bind("<KeyRelease>", self._filtrar_productos)
+        self.entry_buscar_prod.bind("<Return>", lambda e: self._seleccionar_primer_producto())
 
-        ctk.CTkButton(form_frame, text="+ Añadir a la Lista",
-                      font=("Arial", 14, "bold"), fg_color="#333333", hover_color="#555555",
-                      command=self._agregar_producto
-                      ).grid(row=5, column=0, columnspan=2, padx=20, pady=10)
+        self.scroll_productos = ctk.CTkScrollableFrame(form_frame, fg_color="#121212", corner_radius=8, height=135)
+        self.scroll_productos.grid(row=5, column=0, columnspan=2, padx=20, pady=(0, 6), sticky="nsew")
+
+        self.lbl_prod_seleccionado = ctk.CTkLabel(
+            form_frame, text="Ningún producto seleccionado",
+            font=("Arial", 12), text_color="#888888", anchor="w", wraplength=340
+        )
+        self.lbl_prod_seleccionado.grid(row=6, column=0, columnspan=2, padx=20, pady=(0, 6), sticky="w")
+
+        cant_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        cant_frame.grid(row=7, column=0, columnspan=2, padx=20, pady=(4, 10), sticky="ew")
+
+        ctk.CTkLabel(cant_frame, text="Cantidad:", font=("Arial", 14, "bold"), text_color="#cccccc"
+                     ).pack(side="left", padx=(0, 10))
+        self.entry_cantidad = ctk.CTkEntry(cant_frame, width=70, placeholder_text="1")
+        self.entry_cantidad.pack(side="left")
+        self.entry_cantidad.insert(0, "1")
+        self.entry_cantidad.bind("<Return>", lambda e: self._agregar_producto())
+
+        self.btn_agregar = ctk.CTkButton(
+            cant_frame, text="+ Añadir a la Lista",
+            font=("Arial", 13, "bold"), fg_color="#1DB954", hover_color="#179643", text_color="#000000",
+            command=self._agregar_producto
+        )
+        self.btn_agregar.pack(side="right")
 
         ctk.CTkFrame(form_frame, height=1, fg_color="#333333"
-                     ).grid(row=6, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
+                     ).grid(row=8, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
 
         ctk.CTkButton(form_frame, text="🔄 Devolución / Cambio",
-                      font=("Arial", 14, "bold"), fg_color="#3a1e1e",
-                      hover_color="#5e2626", text_color="#ff8888", height=38,
-                      command=self._abrir_devolucion
-                      ).grid(row=7, column=0, columnspan=2, padx=20, pady=(10, 20), sticky="ew")
+                       font=("Arial", 14, "bold"), fg_color="#3a1e1e",
+                       hover_color="#5e2626", text_color="#ff8888", height=38,
+                       command=self._abrir_devolucion
+                       ).grid(row=9, column=0, columnspan=2, padx=20, pady=(5, 20), sticky="ew")
 
         # ── Cart (right) ───────────────────────────────────────────────────────
         ctk.CTkLabel(cart_frame, text="Lista de Productos",
@@ -90,7 +115,10 @@ class VentasTab:
                       command=self._procesar_venta
                       ).pack(fill="x", padx=20, pady=(0, 20))
 
-        # Poblar combos desde el caché del controller (sin consulta DB)
+        self.producto_seleccionado = None
+        self._last_filtro_prods = None
+
+        # Poblar combos y lista desde el caché del controller (sin consulta DB)
         self._poblar_combos_desde_cache()
 
     # ── Public API ─────────────────────────────────────────────────────────────
@@ -108,20 +136,14 @@ class VentasTab:
         self._poblar_combos_desde_cache()
 
     def _poblar_combos_desde_cache(self):
-        """Fill combos using controller's in-memory caches. No DB query."""
+        """Fill client combos and product list using controller's in-memory caches."""
         vals_clientes = ["Seleccione cliente..."] + [
             f"{c['nombre']} {c['apellidos']} ({c['documento']})"
             for c in getattr(self.controller, 'todos_clientes', [])
         ]
         self.combo_cliente.configure(values=vals_clientes)
         self.combo_cliente.set("Seleccione cliente...")
-
-        vals_productos = ["Seleccione producto..."] + [
-            f"{p['nombre']} ({p['referencia']})"
-            for p in getattr(self.controller, 'todos_productos', [])
-        ]
-        self.combo_producto.configure(values=vals_productos)
-        self.combo_producto.set("Seleccione producto...")
+        self._filtrar_productos()
 
     def refresh_clientes(self):
         """Called after a client mutation — re-fetches from DB and updates combos."""
@@ -139,7 +161,7 @@ class VentasTab:
         threading.Thread(target=_fetch, daemon=True).start()
 
     def refresh_productos(self):
-        """Called after a product mutation — re-fetches from DB and updates combos."""
+        """Called after a product mutation — re-fetches from DB and updates list."""
         import threading
         from database.connection import obtener_productos
 
@@ -147,37 +169,152 @@ class VentasTab:
             try:
                 data = obtener_productos(self.controller.rol)
                 self.controller.todos_productos = data
-                self.combo_producto.after(0, lambda: self._poblar_combos_desde_cache())
+                self.scroll_productos.after(0, lambda: self._filtrar_productos())
             except Exception:
                 pass
 
         threading.Thread(target=_fetch, daemon=True).start()
 
+    # ── Selector de Productos por Nombre ───────────────────────────────────────
 
+    def _filtrar_productos(self, event=None):
+        query = self.entry_buscar_prod.get().strip().lower()
+        prods = getattr(self.controller, 'todos_productos', []) or []
+
+        if not query:
+            # Mostrar los primeros 25 productos si no hay filtro
+            filtrados = prods[:25]
+        else:
+            # Priorizar coincidencias en el nombre del producto, luego referencia
+            filtrados = [
+                p for p in prods
+                if query in str(p.get('nombre', '')).lower() or query in str(p.get('referencia', '')).lower()
+            ]
+
+        self._render_lista_productos(filtrados)
+
+    def _render_lista_productos(self, productos):
+        for w in self.scroll_productos.winfo_children():
+            w.destroy()
+
+        if not productos:
+            ctk.CTkLabel(
+                self.scroll_productos, text="No se encontraron productos coincidentes.",
+                text_color="#777777", font=("Arial", 12)
+            ).pack(pady=15)
+            return
+
+        for prod in productos:
+            stock = int(prod.get('bodega', 0) or 0)
+            agotado = stock <= 0
+            precio = float(prod.get('precio_venta', 0) or 0)
+            es_sel = self.producto_seleccionado and self.producto_seleccionado.get('idProducto') == prod.get('idProducto')
+
+            bg_color = "#18331f" if es_sel else "#181818"
+
+            item_btn = ctk.CTkFrame(self.scroll_productos, fg_color=bg_color, corner_radius=6)
+            item_btn.pack(fill="x", pady=2, padx=2)
+
+            left_box = ctk.CTkFrame(item_btn, fg_color="transparent")
+            left_box.pack(side="left", fill="both", expand=True, padx=8, pady=4)
+
+            nombre_txt = str(prod.get('nombre', ''))
+            ref_txt = str(prod.get('referencia', ''))
+            ctk.CTkLabel(
+                left_box, text=f"{nombre_txt} ({ref_txt})",
+                font=("Arial", 12, "bold" if es_sel else "normal"),
+                text_color="#1DB954" if es_sel else "#ffffff",
+                anchor="w"
+            ).pack(anchor="w")
+
+            right_box = ctk.CTkFrame(item_btn, fg_color="transparent")
+            right_box.pack(side="right", padx=8, pady=4)
+
+            stock_color = "#ff4d4d" if agotado else ("#FFD700" if stock <= 5 else "#1DB954")
+            stock_txt = "Agotado" if agotado else f"Stock: {stock}"
+
+            ctk.CTkLabel(
+                right_box, text=f"${precio:,.2f}",
+                font=("Arial", 12, "bold"), text_color="#1DB954"
+            ).pack(anchor="e")
+
+            ctk.CTkLabel(
+                right_box, text=stock_txt,
+                font=("Arial", 11), text_color=stock_color
+            ).pack(anchor="e")
+
+            # Vincular clic para seleccionar
+            if not agotado:
+                item_btn.bind("<Button-1>", lambda e, p=prod: self._seleccionar_producto(p))
+                item_btn.bind("<Double-Button-1>", lambda e, p=prod: self._seleccionar_y_agregar(p))
+                for child in left_box.winfo_children() + right_box.winfo_children():
+                    child.bind("<Button-1>", lambda e, p=prod: self._seleccionar_producto(p))
+                    child.bind("<Double-Button-1>", lambda e, p=prod: self._seleccionar_y_agregar(p))
+
+    def _seleccionar_primer_producto(self):
+        query = self.entry_buscar_prod.get().strip().lower()
+        prods = getattr(self.controller, 'todos_productos', []) or []
+        for p in prods:
+            if (not query or query in str(p.get('nombre', '')).lower() or query in str(p.get('referencia', '')).lower()) and int(p.get('bodega', 0) or 0) > 0:
+                self._seleccionar_producto(p)
+                break
+
+    def _seleccionar_producto(self, prod):
+        self.producto_seleccionado = prod
+        precio = float(prod.get('precio_venta', 0) or 0)
+        stock = int(prod.get('bodega', 0) or 0)
+        self.lbl_prod_seleccionado.configure(
+            text=f"✔ {prod['nombre']} ({prod['referencia']})\nStock: {stock}  |  Precio: ${precio:,.2f}",
+            text_color="#1DB954"
+        )
+        self._filtrar_productos()
+        self.entry_cantidad.focus()
+        self.entry_cantidad.select_range(0, 'end')
+
+    def _seleccionar_y_agregar(self, prod):
+        self._seleccionar_producto(prod)
+        self._agregar_producto()
+
+    def _reset_selector_producto(self):
+        self.producto_seleccionado = None
+        self.lbl_prod_seleccionado.configure(text="Ningún producto seleccionado", text_color="#888888")
+        self.entry_cantidad.delete(0, 'end')
+        self.entry_cantidad.insert(0, "1")
+        self.entry_buscar_prod.delete(0, 'end')
+        self._filtrar_productos()
 
     def _agregar_producto(self):
-        prod_str = self.combo_producto.get()
+        if not self.producto_seleccionado:
+            # Si hay texto escrito, intentar seleccionar el primero
+            self._seleccionar_primer_producto()
+            if not self.producto_seleccionado:
+                self.lbl_prod_seleccionado.configure(
+                    text="⚠ Por favor seleccione un producto de la lista.",
+                    text_color="#ff4d4d"
+                )
+                return
+
+        prod_sel = self.producto_seleccionado
         cant_str = self.entry_cantidad.get().strip()
-        if prod_str == "Seleccione producto..." or not prod_str:
-            return
+
         try:
             cantidad = int(cant_str)
             if cantidad <= 0:
+                self.lbl_prod_seleccionado.configure(text="⚠ La cantidad debe ser mayor a 0.", text_color="#ff4d4d")
                 return
         except ValueError:
-            return
-
-        prod_sel = next(
-            (p for p in getattr(self.controller, 'todos_productos', [])
-             if f"{p['nombre']} ({p['referencia']})" == prod_str), None
-        )
-        if not prod_sel:
+            self.lbl_prod_seleccionado.configure(text="⚠ Ingrese una cantidad numérica válida.", text_color="#ff4d4d")
             return
 
         bodega = int(prod_sel.get('bodega', 0) or 0)
         en_carrito = sum(i['cantidad'] for i in self.carrito_ventas
                          if i['idProducto'] == prod_sel['idProducto'])
         if cantidad + en_carrito > bodega:
+            disponibles = max(0, bodega - en_carrito)
+            self.lbl_prod_seleccionado.configure(
+                text=f"⚠ Stock insuficiente. Disponibles para agregar: {disponibles}",
+                text_color="#ff4d4d"
+            )
             return
 
         for item in self.carrito_ventas:
@@ -194,8 +331,7 @@ class VentasTab:
             })
 
         self._actualizar_carrito_ui()
-        self.entry_cantidad.delete(0, 'end')
-        self.combo_producto.set("Seleccione producto...")
+        self._reset_selector_producto()
 
     def _actualizar_carrito_ui(self):
         for w in self.scroll_carrito.winfo_children():
@@ -376,8 +512,7 @@ class VentasTab:
                 self.carrito_ventas = []
                 self.entry_descuento.delete(0, 'end')
                 self._actualizar_carrito_ui()
-                self.entry_cantidad.delete(0, 'end')
-                self.combo_producto.set("Seleccione producto...")
+                self._reset_selector_producto()
                 self.combo_cliente.set("Seleccione cliente...")
                 if hasattr(self.controller, '_tab_productos'):
                     self.controller._tab_productos.cargar()
