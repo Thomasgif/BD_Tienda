@@ -364,7 +364,7 @@ class BalanceTab:
             return
 
         id_metodo = self._cuentas_gastos.get(cuenta_sel)
-        if not id_metodo:
+        if id_metodo is None:
             self._lbl_status.configure(text="Cuenta seleccionada inválida.")
             return
 

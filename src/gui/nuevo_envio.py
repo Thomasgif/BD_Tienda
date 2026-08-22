@@ -316,7 +316,7 @@ class NuevoEnvioWindow(ctk.CTkToplevel):
                 raise Exception("Formato de compra no válido.")
                 
             id_metodo = self._cuentas_envio.get(metodo_pago)
-            if not id_metodo:
+            if id_metodo is None:
                 raise Exception("Seleccione un método de pago válido.")
                 
             id_empleado = self.id_emp or 1

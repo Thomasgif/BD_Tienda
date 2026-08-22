@@ -444,6 +444,7 @@ class VentasTab:
         if not opciones_c:
             opciones_c = ["Sin métodos"]
         combo_metodo = ctk.CTkComboBox(modal, values=opciones_c, width=340)
+        combo_metodo.set(opciones_c[0])
         combo_metodo.pack(padx=30)
 
         ctk.CTkLabel(modal, text="Abono inicial ($):", font=("Arial", 12)
@@ -492,7 +493,7 @@ class VentasTab:
                     lbl_estado.configure(text="Ingrese un abono numérico válido.")
                     return
             if monto_pagado > 0:
-                if metodo_str not in _cuentas_map:
+                if metodo_str not in _cuentas_map or _cuentas_map[metodo_str] is None:
                     lbl_estado.configure(text="Seleccione un método de pago válido.")
                     return
                 id_metodo = _cuentas_map[metodo_str]

@@ -321,7 +321,9 @@ class EmpleadosTab:
         _cuentas_map = {}
         opciones = []
         for c in cuentas:
-            label = f"{c['tipo_cuenta']} ···{c['num_cuenta'][-4:]}  (Saldo: ${float(c['saldo_total']):,.2f})"
+            num_cta = str(c.get('num_cuenta') or '')
+            num_fmt = f" ···{num_cta[-4:]}" if num_cta else ""
+            label = f"{c['tipo_cuenta']}{num_fmt}  (Saldo: ${float(c['saldo_total']):,.2f})"
             opciones.append(label)
             _cuentas_map[label] = c['idMetodo_de_pago']
 
@@ -351,7 +353,7 @@ class EmpleadosTab:
         def confirmar():
             cuenta_label = combo_cuenta.get()
             id_metodo = _cuentas_map.get(cuenta_label)
-            if not id_metodo:
+            if id_metodo is None:
                 lbl_estado.configure(text="⚠ Seleccione una cuenta válida.", text_color="#FFD700")
                 return
             try:

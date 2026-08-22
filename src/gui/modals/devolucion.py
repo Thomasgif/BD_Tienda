@@ -126,6 +126,7 @@ class DevolucionModal:
         if not op_c:
             op_c = ["Sin métodos"]
         self._combo_metodo_dev = ctk.CTkComboBox(self._pago_frame, values=op_c, width=250)
+        self._combo_metodo_dev.set(op_c[0])
         self._combo_metodo_dev.pack(side="left")
         self._pago_frame.pack_forget()
 
@@ -358,7 +359,7 @@ class DevolucionModal:
         id_metodo = None
         if round(balance, 2) > 0:
             metodo_str = self._combo_metodo_dev.get()
-            if metodo_str not in self._cuentas_dev_map:
+            if metodo_str not in self._cuentas_dev_map or self._cuentas_dev_map[metodo_str] is None:
                 self._lbl_status.configure(text="Seleccione un método de pago para el saldo adicional.")
                 return
             id_metodo = self._cuentas_dev_map[metodo_str]

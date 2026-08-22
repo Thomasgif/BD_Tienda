@@ -298,6 +298,7 @@ class ClientesTab:
             opciones = ["Sin métodos disponibles"]
 
         combo_metodo = ctk.CTkComboBox(modal, values=opciones, width=340)
+        combo_metodo.set(opciones[0])
         combo_metodo.pack(padx=30)
 
         ctk.CTkLabel(modal, text="Monto a pagar ($):", font=("Arial", 12)
@@ -320,7 +321,7 @@ class ClientesTab:
 
         def confirmar():
             sel = combo_metodo.get()
-            if sel not in mapa:
+            if sel not in mapa or mapa[sel] is None:
                 lbl_error.configure(text="Selecciona un método de pago válido.")
                 return
             try:
