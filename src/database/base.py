@@ -31,9 +31,18 @@ except ImportError:
     create_client = None
     Client = None
 
-# Cargar variables de entorno desde el archivo .env en la raíz del proyecto
-base_dir = Path(__file__).resolve().parent.parent.parent
-env_path = base_dir / ".env"
+# Cargar variables de entorno desde el archivo .env
+if getattr(sys, 'frozen', False):
+    # Modo ejecutable (.exe con PyInstaller)
+    base_dir = Path(sys.executable).parent
+    env_path = base_dir / ".env"
+    if not env_path.exists() and hasattr(sys, '_MEIPASS'):
+        env_path = Path(sys._MEIPASS) / ".env"
+else:
+    # Modo desarrollo / script Python
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    env_path = base_dir / ".env"
+
 load_dotenv(dotenv_path=env_path)
 
 _DB_POOL = None
