@@ -32,18 +32,34 @@ except ImportError:
     Client = None
 
 # Cargar variables de entorno desde el archivo .env
-if getattr(sys, 'frozen', False):
-    # Modo ejecutable (.exe con PyInstaller)
-    base_dir = Path(sys.executable).parent
-    env_path = base_dir / ".env"
-    if not env_path.exists() and hasattr(sys, '_MEIPASS'):
-        env_path = Path(sys._MEIPASS) / ".env"
-else:
-    # Modo desarrollo / script Python
-    base_dir = Path(__file__).resolve().parent.parent.parent
-    env_path = base_dir / ".env"
+posibles_rutas_env = []
 
-load_dotenv(dotenv_path=env_path)
+if getattr(sys, 'frozen', False):
+    exe_dir = Path(sys.executable).parent
+    posibles_rutas_env.extend([
+        exe_dir / ".env",
+        exe_dir / ".env.txt",
+        Path.cwd() / ".env",
+        Path.cwd() / ".env.txt"
+    ])
+    if hasattr(sys, '_MEIPASS'):
+        posibles_rutas_env.append(Path(sys._MEIPASS) / ".env")
+else:
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    posibles_rutas_env.extend([
+        base_dir / ".env",
+        Path.cwd() / ".env"
+    ])
+
+env_encontrado = False
+for ruta in posibles_rutas_env:
+    if ruta.is_file():
+        load_dotenv(dotenv_path=ruta, override=True)
+        env_encontrado = True
+        break
+
+if not env_encontrado:
+    load_dotenv(override=True)
 
 _DB_POOL = None
 _SUPABASE_CLIENT = None

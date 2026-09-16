@@ -8,11 +8,15 @@ class ActualizarPrecioProductoWindow(ctk.CTkToplevel):
     Muestra todos los atributos del producto, incluyendo la descripción, de forma detallada y de solo lectura.
     """
 
-    def __init__(self, master=None, producto_datos=None, *args, **kwargs):
+    def __init__(self, master=None, producto_datos=None, rol=None, on_success=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
 
         self.producto_datos = producto_datos or {}
-        self.rol = getattr(master, 'rol', 0)
+        self.on_success = on_success
+        if rol is not None:
+            self.rol = rol
+        else:
+            self.rol = getattr(master, 'rol', 0)
 
         # ── Configurar ventana ────────────────────────────────────────────────
         self.title("Detalle y Actualización de Valor Venta")
@@ -186,6 +190,12 @@ class ActualizarPrecioProductoWindow(ctk.CTkToplevel):
             self.entry_precio_venta.configure(state="disabled")
 
             # Refrescar productos en la ventana padre
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
+
             if self.master and hasattr(self.master, 'actualizar_productos_tab'):
                 self.master.actualizar_productos_tab()
 

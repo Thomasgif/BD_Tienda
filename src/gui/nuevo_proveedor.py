@@ -7,12 +7,17 @@ class NuevoProveedorWindow(ctk.CTkToplevel):
     Solo disponible para usuarios con rol Gerente (rol = 1).
     """
 
-    def __init__(self, master=None, proveedor_datos=None, *args, **kwargs):
+    def __init__(self, master=None, proveedor_datos=None, rol=None, on_success=None, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
 
         self.proveedor_datos = proveedor_datos
         self.es_edicion = proveedor_datos is not None
-        self.rol = getattr(master, 'rol', 1)
+        self.on_success = on_success
+
+        if rol is not None:
+            self.rol = rol
+        else:
+            self.rol = getattr(master, 'rol', 1)
 
         # ── Configurar ventana ────────────────────────────────────────────────
         self.title("Editar Proveedor" if self.es_edicion else "Registrar Nuevo Proveedor")
@@ -159,6 +164,13 @@ class NuevoProveedorWindow(ctk.CTkToplevel):
 
             self.error_label.configure(text=msg, text_color="#1DB954")
             self.btn_guardar.configure(state="disabled")
+
+            # Callback al tener éxito
+            if self.on_success:
+                try:
+                    self.on_success()
+                except Exception as ex:
+                    print(f"Error en on_success: {ex}")
 
             # Refrescar lista en la ventana padre
             if self.master and hasattr(self.master, 'actualizar_lista_proveedores'):
